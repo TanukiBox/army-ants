@@ -37,7 +37,7 @@ export function defaultMods() {
 export const CARDS = [
   // --- ゲート ---
   { id: 'amplify', cat: 'gate', starter: true, stack: true,
-    ja: ['増幅の法則', '×ゲートの効果+1（×2が×3に）'], en: ['Law of Amplify', '× gates multiply by +1 more (×2 → ×3)'],
+    ja: ['増幅の法則', '×ゲートの倍率+1（×2が×3に。数字が金色になる）'], en: ['Law of Amplify', '× gates multiply by +1 more (×2 → ×3, shown in gold)'],
     apply: (m) => { m.mulPlus += 1; } },
   { id: 'growth', cat: 'gate', starter: true, stack: true,
     ja: ['成長の法則', 'ゲートの育ちが2倍速'], en: ['Law of Growth', 'Gates grow twice as fast when shot'],
@@ -46,7 +46,7 @@ export const CARDS = [
     ja: ['盾の法則', '−ゲート・÷ゲートを1回だけ無効にする'], en: ['Law of Shield', 'Cancel one − or ÷ gate'],
     apply: (m) => { m.shields += 1; } },
   { id: 'limit', cat: 'gate', starter: false, cost: 45, stack: true,
-    ja: ['限界突破の法則', 'ゲートの上限+50%（×÷ゲートは+1段）'], en: ['Law of No Limits', 'Gate caps +50% (× ÷ gates +1 step)'],
+    ja: ['限界突破の法則', '撃って育てられる上限+50%（×÷ゲートは+1段）'], en: ['Law of No Limits', 'Shot gates can grow 50% higher (× ÷ +1 step)'],
     apply: (m) => { m.gateCapMul += 0.5; m.gateCapSteps += 1; } },
   { id: 'graze', cat: 'gate', starter: false, cost: 40, stack: true,
     ja: ['かすりの法則', 'かすり取りしたとき、＋ゲートの値が+50%'], en: ['Law of the Graze', 'Grazing adds +50% to the + gate'],
@@ -99,7 +99,7 @@ export const CARDS = [
     ja: ['突撃の法則', '攻城で巣に与える力+30%'], en: ['Law of Storming', 'Siege: +30% damage to the nest'],
     apply: (m) => { m.siegeDmg *= 1.3; } },
   { id: 'reinforce', cat: 'siege', starter: false, cost: 45, stack: true,
-    ja: ['増援の法則', '攻城の動く×ゲートの効果+1'], en: ['Law of Reinforcement', 'Siege: moving × gates +1'],
+    ja: ['増援の法則', '攻城の動く×ゲートの倍率+1（数字が金色になる）'], en: ['Law of Reinforcement', 'Siege: moving × gates +1 (shown in gold)'],
     apply: (m) => { m.siegeMulPlus += 1; } },
   // --- 蜜 ---
   { id: 'nectar', cat: 'meta', starter: false, cost: 30, stack: true,

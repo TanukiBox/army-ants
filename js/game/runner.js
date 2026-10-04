@@ -16,11 +16,14 @@ import { addHoney, inv } from './meta.js';
 const HALF = CONFIG.track.width / 2;
 const GOOD = { fill: 0x10306a, edge: 0x3a8cff, text: 0x7ab8ff };
 const BAD = { fill: 0x6a1010, edge: 0xff3a2a, text: 0xff7a68 };
+const BOOST_TEXT = 0xffd060;   // 法則カードで強くなった×ゲートの数字の色
 
 function gateGood(g) { return g.op === 'add' ? g.v > 0 : g.v > 0; }
-function gateText(g) {
+/** ×ゲートに足される分（増幅の法則） */
+function mulBoost(g, run) { return g.op === 'mul' && g.v > 0 ? run?.mods?.mulPlus ?? 0 : 0; }
+function gateText(g, run) {
   if (g.op === 'add') return (g.v >= 0 ? '+' : '-') + formatCount(Math.abs(g.v));
-  return (g.v > 0 ? '×' : '÷') + Math.abs(g.v);
+  return (g.v > 0 ? '×' + (g.v + mulBoost(g, run)) : '÷' + Math.abs(g.v));
 }
 
 // =============================================================================
@@ -62,8 +65,9 @@ class GateRow {
         this.gfx.rect(Math.round(px) - 1, y - h / 2 - 4, 3, h + 6).fill({ color: 0x0a0608 });
         this.glow.rect(Math.round(px), y - h / 2 - 4, 1, 2).fill({ color: c.edge, alpha: 1 });
       }
-      g.label.setText(gateText(g));
-      g.label.tint = c.text;
+      const run = this.f.G.run;
+      g.label.setText(gateText(g, run));
+      g.label.tint = mulBoost(g, run) > 0 ? BOOST_TEXT : c.text;
       g.label.pxScale = g.bump > 0 ? 3 : 2;
       g.label.scale.set(g.label.pxScale);
       g.label.position.set(Math.round((g.x0 + g.x1) / 2), y - 2 + (g.bump > 0 ? 3 : 0));

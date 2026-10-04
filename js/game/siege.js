@@ -111,7 +111,7 @@ export class Siege {
       this.glow.addChild(gl);
       const m = g.m > 0 ? g.m + G.run.mods.siegeMulPlus : g.m;   // 増援の法則（×ゲートだけ）
       label.setText(m > 0 ? '×' + m : '÷' + (-m));
-      label.tint = m > 0 ? GOOD.text : BAD.text;
+      label.tint = m > 0 ? (m !== g.m ? 0xffd060 : GOOD.text) : BAD.text;   // 法則カードで強くなった分は金色
       return { ...g, m, y: this.moundY + 60 + g.t * (this.nestY - this.moundY - 120), x: 0, gfx, gl, label };
     });
 
