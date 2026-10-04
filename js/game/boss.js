@@ -8,6 +8,7 @@ import { CONFIG } from './config.js';
 import { t } from './i18n.js';
 import { sfx } from './audio.js';
 import { C as FXC, textures } from '../core/fx.js';
+import { addHoney, inv } from './meta.js';
 
 const HALF = CONFIG.track.width / 2;
 
@@ -35,7 +36,7 @@ export class Boss {
     this.kind = kind;
     this.hooks = hooks;
     this.cfg = CONFIG.bosses[kind];
-    this.hp = this.hp0 = this.cfg.hp;
+    this.hp = this.hp0 = Math.round(this.cfg.hp * inv(field.G.run, 'bossPer'));
     this.alive = true;
     this.sheet = this.G.sprites.bosses[kind];
     this.wings = this.G.sprites.bosses[kind + '_wings'] || null;
@@ -122,6 +123,7 @@ export class Boss {
 
   defeat() {
     this.alive = false;
+    addHoney(this.G.run, CONFIG.honey.boss[['mantis', 'spider', 'hornet', 'queen'].indexOf(this.kind)] ?? 0);
     this.hp = 0;
     this.action = null;
     this.warnG.clear();

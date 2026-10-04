@@ -23,10 +23,11 @@ export class Hud {
 
   show(on) { this.root.classList.toggle('hidden', !on); }
 
-  setStage(stage) {
+  setStage(stage, daily = false) {
     const area = t('area_' + stage.areaName);
     const s = stage.boss ? t('boss_stage') : `${stage.area + 1}-${stage.local + 1}`;
-    this.stageEl.textContent = `${s}  ${area}`;
+    const inv = this.G.run?.invasion ? `  ${t('invasion', { n: this.G.run.invasion })}` : '';
+    this.stageEl.textContent = (daily ? t('daily_course') + '  ' : '') + `${s}  ${area}` + inv;
   }
 
   refresh() {
@@ -89,7 +90,11 @@ export function hideScreens() {
   for (const el of document.querySelectorAll('.screen')) el.classList.add('hidden');
 }
 
-export function fillResult({ title, sub, reached, maxCount, best, shortBy, good }) {
+export function fillResult({ title, sub, reached, maxCount, best, shortBy, good, honey = '', unlock = '', daily = '' }) {
+  $('res-honey').textContent = honey;
+  $('res-unlock').textContent = unlock;
+  $('res-unlock').classList.toggle('hidden', !unlock);
+  $('res-daily').textContent = daily;
   $('res-title').textContent = title;
   $('res-title').className = good ? 'good' : 'bad';
   $('res-sub').textContent = sub || '';

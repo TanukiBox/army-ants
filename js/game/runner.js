@@ -11,6 +11,7 @@ import { sfx } from './audio.js';
 import { textures, C as FXC } from '../core/fx.js';
 import { PixelText, formatCount } from '../core/pixelfont.js';
 import { applyMutation, variantName, swarmLook, MUT_COLOR } from './mutation.js';
+import { addHoney, inv } from './meta.js';
 
 const HALF = CONFIG.track.width / 2;
 const GOOD = { fill: 0x10306a, edge: 0x3a8cff, text: 0x7ab8ff };
@@ -133,7 +134,11 @@ class GateRow {
           this.f.applyMul(g, g.passed / total, (g.x0 + g.x1) / 2, this.y);
         }
       }
-      if (graze && mulHit) this.f.G.popup((this.gates[0].x0 + this.gates.at(-1).x1) / 2, this.y - 24, t('graze'), 'graze');
+      if (graze && mulHit) {
+        this.f.G.popup((this.gates[0].x0 + this.gates.at(-1).x1) / 2, this.y - 24, t('graze'), 'graze');
+        this.f.grazeBonus(this);
+      }
+      if (this.crossed.size > 0) this.f.rowGain(this);
       for (const g of this.gates) g.label.alpha = 0.35;
       this.gfx.alpha = 0.5;
       this.glow.alpha = 0.3;
@@ -156,7 +161,7 @@ class Cocoon {
     this.x = ev.x;
     this.y = y;
     this.mut = ev.mut;
-    this.hp = this.hp0 = ev.hp;
+    this.hp = this.hp0 = Math.max(4, Math.ceil(ev.hp * field.G.run.mods.cocoonHp));
     this.r = CONFIG.cocoon.radius;
     this.state = 'alive';
     const sh = field.S.props.cocoon;
@@ -190,7 +195,7 @@ class Cocoon {
 
   damage(d) {
     if (this.state !== 'alive') return;
-    this.hp -= d;
+    this.hp -= d * this.f.G.run.mods.cocoonDmg;
     sfx.cocoonHit();
     if (this.hp <= 0) this.break();
     else {
@@ -210,6 +215,7 @@ class Cocoon {
     fx.burst(fx.over, this.x, this.y - 4, 12, { color: [0x52525e, 0x383842, 0x70707e], speed: [20, 70], life: [0.4, 0.8], drag: 4, size: 2 });
     fx.ring(fx.glow, this.x, this.y - 6, 3, 26, 0.35, col, 1);
     sfx.cocoonBreak();
+    addHoney(this.f.G.run, CONFIG.honey.cocoon);
     this.f.mutate(this.mut, this.x, this.y);
     this.remove();
   }
@@ -255,7 +261,7 @@ class Termites {
     // 群れが大きいときは、シロアリもそれに合わせて多い。予想より小さい群れには少し手加減する
     const cnt = field.G.run.count, E = field.stage.expected;
     const base = Math.round(ev.n * Math.max(0.35, Math.min(1, cnt / Math.max(1, E))));
-    this.n = Math.max(base, Math.round(cnt * (ev.ratio ?? 0)));
+    this.n = Math.round(Math.max(base, Math.round(cnt * (ev.ratio ?? 0))) * inv(field.G.run, 'enemyPer'));
     this.n0 = ev.n;
     this.poison = 0;
     this.poisonAcc = 0;
@@ -294,8 +300,15 @@ class Termites {
     this.label.setText(formatCount(Math.max(0, Math.ceil(this.n))));
   }
 
-  kill(k) {
+  /** k 匹倒す。clash = ぶつかって相殺したとき（捕食の法則の対象外） */
+  kill(k, clash = false) {
+    const before = this.n;
     this.n = Math.max(0, this.n - k);
+    if (!clash) this.f.devour(before - this.n);
+    if (before > 0 && this.n <= 0 && !this.paid) {
+      this.paid = true;
+      addHoney(this.f.G.run, CONFIG.honey.termiteGroup);
+    }
     this.sync();
   }
 
@@ -338,13 +351,20 @@ class Termites {
     const dy = (this.y - sw.y) / (sw.ry + R * 0.75 + 4);
     if (sw.count > 0 && this.n > 0 && dx * dx + dy * dy < 1) {
       const rate = C.clashRate * (1 + Math.min(this.n, sw.count) / 150);
+      const lossMul = this.f.G.run.mods.clashLoss;   // 相殺の法則：こちらが失う数が少ない
       this.clashAcc = (this.clashAcc || 0) + rate * dt;
-      const k = Math.min(Math.floor(this.clashAcc), Math.ceil(this.n), sw.count);
+      const k = Math.min(Math.floor(this.clashAcc), Math.ceil(this.n), Math.ceil(sw.count / lossMul));
       if (k > 0) {
         this.clashAcc -= k;
-        this.kill(k);
+        this.kill(k, true);
+        this.lossAcc = (this.lossAcc || 0) + k * lossMul;
+        const lose = Math.floor(this.lossAcc);
+        this.lossAcc -= lose;
         const cx = (this.x + sw.x) / 2, cy = (this.y + sw.y) / 2;
-        this.f.loseAnts(k, { at: { x: this.x, y: this.y }, burst: true, cancel: true, cx, cy });
+        if (lose > 0) {
+          if (lose >= sw.count) this.f.G.run.shortBy = Math.ceil(this.n) + 1;   // あと何匹いれば勝てたか
+          this.f.loseAnts(lose, { at: { x: this.x, y: this.y }, burst: true, cancel: true, cx, cy });
+        }
         sfx.cancel();
       }
     }
@@ -389,10 +409,13 @@ class Beetle {
   }
 
   damage(d) {
+    const was = this.hp;
     this.hp -= d;
     this.hurtT = 0.08;
     sfx.hit();
-    if (this.hp <= 0) {
+    if (this.hp <= 0 && was > 0) {
+      addHoney(this.f.G.run, CONFIG.honey.beetle);
+      this.f.devour(5);
       const fx = this.f.fx;
       fx.burst(fx.glow, this.x, this.y, 18, { color: [FXC.ember, FXC.orange, 0xffffff], speed: [30, 100], life: [0.2, 0.5], drag: 5, size: 2 });
       fx.burst(fx.over, this.x, this.y, 14, { color: [0x36220c, 0x0f090b, 0x553410], speed: [30, 90], life: [0.3, 0.7], drag: 4, size: 2 });
@@ -411,7 +434,7 @@ class Beetle {
       const p = Math.min(this.poison, dt * 3);
       this.poison -= p;
       this.hp -= p;
-      if (this.hp <= 0) this.damage(0);
+      if (this.hp <= 0) this.damage(0.001);
     }
     const near = sw.y - this.y < B.range && this.y < sw.y - sw.ry * 0.7;
     this.cool -= dt;
@@ -518,8 +541,13 @@ export class Field {
 
   /** k 匹失う。at の近くのアリから消える。armor=true なら甲殻装甲で減る数が少なくなる */
   loseAnts(k, opts = {}) {
-    if (opts.armor) k = Math.max(opts.min ?? 1, Math.round(k * (1 - CONFIG.armor.reduce[this.G.run.armor])));
-    k = Math.min(k, this.G.run.count);
+    const run = this.G.run;
+    if (opts.armor) {
+      k *= (1 - CONFIG.armor.reduce[run.armor]) * run.mods.dmgTaken * inv(run, 'hitPer');
+      k = Math.max(opts.min ?? 1, Math.round(k));
+    }
+    if (k >= run.count && run.count > 0 && !run.shortBy) run.shortBy = Math.round(k - run.count + 1);
+    k = Math.min(k, run.count);
     if (k <= 0) return 0;
     const at = opts.at;
     const pick = opts.pick || (at ? (a) => Math.hypot(a.x - at.x, a.y - at.y) : undefined);
@@ -536,9 +564,13 @@ export class Field {
   applyAdd(g, x, y) {
     const run = this.G.run;
     if (g.v > 0) {
-      this.setCount(run.count + g.v, { from: { x, y: y - 6 } });
+      const v = Math.round(g.v * run.mods.addMul);
+      g.gave = v;
+      this.setCount(run.count + v, { from: { x, y: y - 6 } });
       sfx.gateGood();
-      this.G.popupNum(x, y - 18, '+' + formatCount(g.v), 0x7ab8ff);
+      this.G.popupNum(x, y - 18, '+' + formatCount(v), 0x7ab8ff);
+    } else if (this.useShield(x, y)) {
+      return;
     } else {
       const k = Math.min(run.count, -g.v);
       this.loseAnts(k, { at: { x, y } });
@@ -547,11 +579,52 @@ export class Field {
     }
   }
 
+  /** 盾の法則：−ゲート・÷ゲートを1回無効にする */
+  useShield(x, y) {
+    const m = this.G.run.mods;
+    if (m.shields <= 0) return false;
+    m.shields--;
+    this.G.popup(x, y - 26, t('shielded'), 'graze');
+    sfx.ui();
+    return true;
+  }
+
+  /** かすりの法則：かすり取りしたとき＋ゲートの値を上乗せ */
+  grazeBonus(row) {
+    const b = this.G.run.mods.grazeBonus;
+    if (b <= 0) return;
+    let add = 0;
+    for (const g of row.gates) if (g.op === 'add' && g.gave) add += g.gave * b;
+    if (add >= 1) {
+      this.setCount(this.G.run.count + Math.round(add), { from: { x: this.swarm.x, y: row.y } });
+      this.G.popupNum(this.swarm.x, row.y - 30, '+' + formatCount(Math.round(add)), 0xffd36a);
+    }
+  }
+
+  /** 群れの法則：ゲートの並びを通るたびに増える */
+  rowGain(row) {
+    const g = this.G.run.mods.rowGain;
+    if (g > 0 && this.G.run.count > 0) this.setCount(this.G.run.count * (1 + g), { from: { x: this.swarm.x, y: row.y } });
+  }
+
+  /** 捕食の法則：倒した敵の一部が群れに加わる */
+  devour(killed) {
+    const p = this.G.run.mods.predation;
+    if (p <= 0 || killed <= 0 || this.G.run.count <= 0) return;
+    this.devourAcc = (this.devourAcc || 0) + killed * p;
+    if (this.devourAcc >= 1) {
+      const k = Math.floor(this.devourAcc);
+      this.devourAcc -= k;
+      this.setCount(this.G.run.count + k, { from: { x: this.swarm.x, y: this.swarm.y - this.swarm.ry } });
+    }
+  }
+
   applyMul(g, frac, x, y) {
     const run = this.G.run;
     const inGate = run.count * frac;
+    if (g.v < 0 && this.useShield(x, y)) return;
     if (g.v > 0) {
-      const add = Math.round(inGate * (g.v - 1));
+      const add = Math.round(inGate * (g.v + run.mods.mulPlus - 1));
       if (add > 0) {
         this.setCount(run.count + add, { from: { x, y: y - 6 } });
         sfx.multiply();
@@ -574,6 +647,7 @@ export class Field {
     const run = this.G.run;
     const r = applyMutation(run, mut);
     this.swarm.setVariant(variantName(run), { ...swarmLook(run), sweep: true });
+    if (run.mods.mutateGain > 0) this.setCount(run.count * (1 + run.mods.mutateGain), { from: { x, y } });
     sfx.mutate();
     this.G.flash(MUT_COLOR[mut], 0.25);
     this.G.popup(x, y - 34, t('mutate', { name: t('mut_' + r.kind) + ' ' + t('lv', { n: r.lv }) }), 'mutate');
@@ -582,7 +656,7 @@ export class Field {
 
   enemyShot(x, y, tx, ty) {
     const d = Math.hypot(tx - x, ty - y) || 1;
-    const sp = CONFIG.beetle.shotSpeed;
+    const sp = CONFIG.beetle.shotSpeed * inv(this.G.run, 'shotPer');
     const s = new Sprite(this.T.glob);
     s.anchor.set(0.5);
     s.scale.set(2);         // 2倍（整数倍なのでドットはくずれない）
@@ -608,7 +682,8 @@ export class Field {
     }
     // 群れが大きいほど弾が強い
     dmg *= 1 + CONFIG.fire.damagePerLog10 * Math.max(0, Math.log10(Math.max(1, this.swarm.count) / 10));
-    return { interval, perMul, dmg, kind, lv: w?.lv ?? 0 };
+    const m = this.G.run.mods;
+    return { interval: interval * m.fireRate, perMul, dmg: dmg * m.dmgMul, kind, lv: w?.lv ?? 0 };
   }
 
   fire(dt) {
@@ -620,7 +695,9 @@ export class Field {
     this.fireT = 0;
     const F = CONFIG.fire;
     let n = Math.round(F.perVolleyBase + F.perVolleyLog2 * Math.log2(Math.max(1, sw.count)));
-    n = Math.max(1, Math.min(F.perVolleyMax, Math.round(n * W.perMul)));
+    // 群射の法則：10匹ごとに弾+1（最大+8）
+    const extra = Math.min(8, Math.floor(sw.count / 10)) * this.G.run.mods.volleyPer10;
+    n = Math.max(1, Math.min(F.perVolleyMax + extra, Math.round((n + extra) * W.perMul)));
     // 弾は群れの真ん中から細い束になって前へ飛ぶ（群れを動かして、撃つ的を選ぶ）。数が多いほど束が太い
     const half = F.beamBase + F.beamPerLog10 * Math.log10(Math.max(10, sw.count));
     const front = sw.y - sw.ry * 0.5;
@@ -641,7 +718,8 @@ export class Field {
     else { s = new Sprite(T.dot2); s.tint = FXC.acid; }
     s.anchor.set(0.5);
     this.glow.addChild(s);
-    this.bullets.push({ s, x, y, py: y, dmg: W.dmg, kind: W.kind, lv: W.lv, trail: 0 });
+    this.bullets.push({ s, x, y, py: y, dmg: W.dmg, kind: W.kind, lv: W.lv, trail: 0,
+                        pierce: W.kind === 'sting' ? this.G.run.mods.pierce : 0, hit: null });
   }
 
   updateBullets(dt) {
@@ -657,7 +735,7 @@ export class Field {
         if (b.py >= r.y + CONFIG.gate.height / 2 && b.y < r.y + CONFIG.gate.height / 2) {
           const g = r.gateAt(b.x);
           if (g) {
-            if (r.hit(g, 1)) sfx.gateHit();
+            if (r.hit(g, this.G.run.mods.gateGrow)) sfx.gateHit();
             this.impact(b, b.x, r.y + 6, false);
             hit = true;
             break;
@@ -685,23 +763,35 @@ export class Field {
         return true;
       }
     }
+    const poison = (CONFIG.weapons.fire.poison[b.lv - 1] ?? 0) * this.G.run.mods.poisonMul;
+    // 貫通の法則：毒針は敵を何体か貫いて飛び続ける
+    const through = (target) => {
+      if (b.pierce > 0) {
+        b.pierce--;
+        (b.hit ||= new Set()).add(target);
+        return true;
+      }
+      return false;
+    };
     for (const g of this.termites) {
-      if (g.dead) continue;
+      if (g.dead || b.hit?.has(g)) continue;
       const R = g.r;
       if (Math.abs(b.x - g.x) < R * 1.2 && Math.abs(b.y - g.y) < R * 0.75 + 4) {
         g.kill(b.dmg);
-        if (b.kind === 'venom') g.poison += CONFIG.weapons.fire.poison[b.lv - 1] ?? 0;
+        if (b.kind === 'venom') g.poison += poison;
         this.impact(b, b.x, b.y, true);
         sfx.hit();
+        if (through(g)) continue;
         return true;
       }
     }
     for (const e of this.beetles) {
-      if (e.dead) continue;
+      if (e.dead || b.hit?.has(e)) continue;
       if (Math.abs(b.x - e.x) < e.r && Math.abs(b.y - e.y) < e.r) {
         e.damage(b.dmg);
-        if (b.kind === 'venom') e.poison += CONFIG.weapons.fire.poison[b.lv - 1] ?? 0;
+        if (b.kind === 'venom') e.poison += poison;
         this.impact(b, b.x, b.y, true);
+        if (through(e)) continue;
         return true;
       }
     }
@@ -713,7 +803,7 @@ export class Field {
     }
     if (this.boss && this.boss.hitTest(b.x, b.y)) {
       const mul = b.kind === 'sting' ? CONFIG.weapons.bullet.bossMul : 1;
-      this.boss.damage(b.dmg * mul, b.kind === 'venom' ? CONFIG.weapons.fire.poison[b.lv - 1] : 0);
+      this.boss.damage(b.dmg * mul, b.kind === 'venom' ? poison : 0);
       this.impact(b, b.x, b.y, true);
       return true;
     }
@@ -741,11 +831,12 @@ export class Field {
       this.snapT -= dt;
       if (this.snapT > 0) return;
       const front = sw.y - sw.ry;
-      const inRange = (x, y, r = 0) => y > front - M.range - r && y < sw.y + 6 && Math.abs(x - sw.x) < sw.rx + r + 12;
+      const jm = this.G.run.mods.jawMul;
+      const inRange = (x, y, r = 0) => y > front - M.range * jm - r && y < sw.y + 6 && Math.abs(x - sw.x) < sw.rx + r + 12;
       let any = false;
       for (const g of this.termites) {
         if (!g.dead && inRange(g.x, g.y, g.r)) {
-          g.kill(M.kills[w.lv - 1]);
+          g.kill(Math.round(M.kills[w.lv - 1] * jm));
           g.y -= M.knockback[w.lv - 1];   // 弾き飛ばす
           any = true;
         }
@@ -835,7 +926,7 @@ export class Field {
 
   explodeAt(x, y, lv) {
     const Bm = CONFIG.weapons.bomb;
-    const R = Bm.radius[lv - 1], D = Bm.damage[lv - 1];
+    const R = Bm.radius[lv - 1] * this.G.run.mods.bombRadius, D = Bm.damage[lv - 1];
     this.fx.explode(x, y, lv, this.G.view);
     sfx.explode(lv >= 2);
     for (const g of this.termites) if (!g.dead && Math.hypot(g.x - x, g.y - y) < R + g.r) g.kill(D);

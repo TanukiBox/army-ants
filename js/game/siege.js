@@ -6,6 +6,7 @@ import { Container, Sprite, Graphics } from '../../vendor/pixi.min.mjs';
 import { CONFIG } from './config.js';
 import { t, fmt } from './i18n.js';
 import { getSave, save } from './save.js';
+import { addHoney, inv } from './meta.js';
 import { sfx } from './audio.js';
 import { C as FXC, textures } from '../core/fx.js';
 import { PixelText, formatCount } from '../core/pixelfont.js';
@@ -41,7 +42,8 @@ export class Siege {
     this.reserve = G.run.count;
     this.start = G.run.count;
     // 巣の耐久：ステージで決めた値。ただし群れが大きいときは、それに合わせて固くなる
-    const ratio = CONFIG.siege.hpCountRatio[stage.area] ?? CONFIG.siege.hpCountRatio.at(-1);
+    const ratio = (CONFIG.siege.hpCountRatio[stage.area] ?? CONFIG.siege.hpCountRatio.at(-1))
+      + (G.run.invasion || 0) * CONFIG.invasion.nestPer;
     this.hp = this.hp0 = Math.max(this.cfg.hp, Math.round(this.reserve * ratio));
     this.units = [];
     this.defenders = [];
@@ -105,7 +107,9 @@ export class Siege {
       label.tint = GOOD.text;
       this.top.addChild(gfx, label);
       this.glow.addChild(gl);
-      return { ...g, y: this.moundY + 60 + g.t * (this.nestY - this.moundY - 120), x: 0, gfx, gl, label };
+      const m = g.m + G.run.mods.siegeMulPlus;   // 増援の法則
+      label.setText('×' + m);
+      return { ...g, m, y: this.moundY + 60 + g.t * (this.nestY - this.moundY - 120), x: 0, gfx, gl, label };
     });
 
     // 指で狙う（最初に触ったときに送り出しが始まる）
@@ -279,7 +283,7 @@ export class Siege {
   }
 
   hit(u) {
-    this.hp = Math.max(0, this.hp - u.v);
+    this.hp = Math.max(0, this.hp - u.v * this.G.run.mods.siegeDmg);   // 突撃の法則
     sfx.nestHit();
     const fx = this.G.fx;
     fx.burst(fx.over, u.x, u.y, 3, { color: [0x5e432c, 0x765638, 0x3a111b], speed: [20, 60], life: [0.2, 0.5], drag: 5 });
@@ -293,6 +297,7 @@ export class Siege {
 
   win() {
     this.state = 'won';
+    addHoney(this.G.run, CONFIG.honey.nest + this.stage.area);
     this.endT = 1.6;
     const fx = this.G.fx, y = this.moundY - 30;
     for (let i = 0; i < 4; i++) this.G.later(i * 0.14, () => fx.explode((Math.random() - 0.5) * 50, y + (Math.random() - 0.5) * 50, 3, this.G.view));
@@ -367,7 +372,7 @@ export class Siege {
       }
     } else if (this.state === 'go' && this.reserve <= 0 && this.units.length === 0) {
       this.state = 'done';
-      this.hooks.onFail(this.hp);
+      this.hooks.onFail(Math.ceil(this.hp / this.G.run.mods.siegeDmg));
     }
   }
 

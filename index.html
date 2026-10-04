@@ -91,12 +91,12 @@
   .btn.main { background: #5a1420; border-color: var(--accent); box-shadow: 0 0 14px rgba(255, 58, 42, 0.4); }
   .btn.small { min-width: 0; height: 38px; font-size: 13px; padding: 0 14px; }
   .btn.on { background: #5a1420; border-color: var(--accent); }
-  #title { cursor: pointer; background: linear-gradient(to bottom, rgba(5,3,4,0.15), rgba(5,3,4,0.05) 40%, rgba(5,3,4,0.75)); }
+  #title { background: linear-gradient(to bottom, rgba(5,3,4,0.15), rgba(5,3,4,0.05) 40%, rgba(5,3,4,0.75)); }
   #logo { font-size: 46px; font-weight: 900; letter-spacing: 0.14em; color: #f4e2d6;
     text-shadow: 0 0 18px #ff2a1a, 0 0 4px #ff2a1a, 0 3px 4px #000; margin-top: -20vh; }
   #logo-ja { font-size: 13px; letter-spacing: 0.5em; color: #c49a8e; margin-top: -6px; }
   #title-sub { font-size: 14px; color: var(--text); text-shadow: 0 1px 3px #000; }
-  #title-tap { margin-top: 18vh; font-size: 16px; font-weight: 700; animation: blink 1.4s ease-in-out infinite; text-shadow: 0 0 10px #ff3a2a; }
+
   #title-how { font-size: 12px; color: var(--dim); }
   #title-best { font-size: 12px; color: var(--gold); min-height: 1em; }
   #btn-title-settings { position: absolute; right: 12px; top: max(12px, env(safe-area-inset-top)); }
@@ -110,9 +110,42 @@
   #res-title.bad { color: #ffb4a0; text-shadow: 0 0 14px #ff2a1a; }
   #res-title.good { color: #d8ecff; text-shadow: 0 0 14px #3a8cff; }
   #res-sub { font-size: 13px; color: var(--dim); }
-  #res-short { font-size: 22px; font-weight: 900; color: var(--gold); text-shadow: 0 0 12px rgba(255, 200, 80, 0.6); margin: 6px 0; }
+  #res-short { font-size: 26px; font-weight: 900; color: var(--gold); text-shadow: 0 0 14px rgba(255, 200, 80, 0.7); margin: 8px 0 10px; line-height: 1.3; }
   .res-line { font-size: 14px; }
   #res-best { font-size: 12px; color: var(--dim); margin-bottom: 10px; }
+  #title-menu { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 12vh; }
+  #title-menu .btn { min-width: 220px; }
+  #inv-row { gap: 10px; font-size: 14px; font-weight: 700; color: #ffb4a0; }
+  #title-honey, .honey { font-size: 14px; font-weight: 700; color: var(--gold); text-shadow: 0 0 8px rgba(255, 200, 80, 0.4); }
+  #title-daily { font-size: 12px; color: var(--dim); }
+  .note { font-size: 12px; color: var(--dim); max-width: 330px; line-height: 1.5; }
+  #card-list { display: flex; flex-direction: column; gap: 10px; width: min(92%, 340px); }
+  .card { text-align: left; padding: 10px 12px 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: #140a0d;
+    color: var(--text); font: inherit; border-left: 4px solid #888; box-shadow: 0 0 12px rgba(0,0,0,0.6); }
+  .card:active { transform: scale(0.98); }
+  .card b { display: block; font-size: 16px; margin: 2px 0; }
+  .card b i { font-style: normal; color: var(--gold); font-size: 13px; }
+  .card .c-cat { font-size: 10px; letter-spacing: 0.1em; color: var(--dim); }
+  .card .c-desc { font-size: 13px; color: #d8c8bc; }
+  .card.cat-gate { border-left-color: #3a8cff; } .card.cat-fire { border-left-color: #ff8a24; }
+  .card.cat-cocoon { border-left-color: #d0d0e0; } .card.cat-weapon { border-left-color: #b85cff; }
+  .card.cat-guard { border-left-color: #36dcff; } .card.cat-siege { border-left-color: #ff3a2a; } .card.cat-meta { border-left-color: #ffd420; }
+  #queen-list { width: min(92%, 360px); max-height: 62vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+    scrollbar-color: #5a1420 #0c0608; scrollbar-width: thin; }
+  #queen-list::-webkit-scrollbar { width: 6px; }
+  #queen-list::-webkit-scrollbar-track { background: #0c0608; }
+  #queen-list::-webkit-scrollbar-thumb { background: #5a1420; border-radius: 3px; }
+  .q-head { font-size: 12px; letter-spacing: 0.12em; color: var(--dim); margin-top: 8px; text-align: left; }
+  .q-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #120a0c; }
+  .q-text { flex: 1; text-align: left; }
+  .q-text b { display: block; font-size: 14px; }
+  .q-text span { font-size: 12px; color: var(--dim); }
+  .q-row .btn { flex: none; min-width: 84px; }
+  .btn:disabled { opacity: 0.4; }
+  .q-note { font-size: 12px; color: var(--dim); }
+  .res-line.small { font-size: 12px; color: var(--dim); }
+  .res-unlock { font-size: 16px; font-weight: 800; color: #ffd0c0; text-shadow: 0 0 10px #ff3a2a; }
+  .btn.share { background: #0c0c0c; border-color: #555; }
   #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--dim); }
   #loading .track { width: 160px; height: 3px; background: #1a0c10; }
   #load-bar { height: 100%; width: 0; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
@@ -141,15 +174,23 @@
     <div id="logo">ARMY ANTS</div>
     <div id="logo-ja">アーミーアンツ</div>
     <div id="title-sub" data-t="title_sub"></div>
-    <div id="title-tap" data-t="tap_start"></div>
+    <div id="title-menu">
+      <button id="btn-sortie" class="btn main" data-t="sortie"></button>
+      <div id="inv-row" class="set-row hidden"><button id="inv-dn" class="btn small">◀</button><span id="inv-val"></span><button id="inv-up" class="btn small">▶</button></div>
+      <button id="btn-daily" class="btn" data-t="daily_course"></button>
+      <button id="btn-queen" class="btn" data-t="queen_room"></button>
+    </div>
     <div id="title-how" data-t="how_to"></div>
     <div id="title-best"></div>
+    <div id="title-daily"></div>
+    <div id="title-honey"></div>
     <button id="btn-title-settings" class="btn small" data-t="settings"></button>
     <div class="credit">Tanuki Box</div>
   </div>
 
   <div id="pause" class="screen dim hidden">
     <div class="heading" data-t="paused"></div>
+    <div id="pause-cards" class="note"></div>
     <button id="btn-resume" class="btn main" data-t="resume"></button>
     <button id="btn-pause-settings" class="btn" data-t="settings"></button>
     <button id="btn-retire" class="btn" data-t="retire"></button>
@@ -172,9 +213,27 @@
     <div id="res-short"></div>
     <div id="res-reached" class="res-line"></div>
     <div id="res-max" class="res-line"></div>
+    <div id="res-honey" class="res-line honey"></div>
+    <div id="res-unlock" class="res-unlock hidden"></div>
+    <div id="res-daily" class="res-line small"></div>
     <div id="res-best"></div>
+    <button id="btn-share" class="btn share" data-t="share"></button>
     <button id="btn-retry" class="btn main" data-t="retry"></button>
     <button id="btn-to-title" class="btn" data-t="to_title"></button>
+  </div>
+
+  <div id="cards" class="screen dim hidden">
+    <div class="heading" data-t="choose_card"></div>
+    <div id="card-sub" class="note"></div>
+    <div id="card-list"></div>
+    <div id="card-owned" class="note"></div>
+  </div>
+
+  <div id="queen" class="screen dim hidden">
+    <div class="heading" data-t="queen_room"></div>
+    <div id="queen-honey" class="honey"></div>
+    <div id="queen-list"></div>
+    <button id="btn-queen-close" class="btn" data-t="close"></button>
   </div>
 
   <div id="loading"><div class="msg">Loading…</div><div class="track"><div id="load-bar"></div></div></div>

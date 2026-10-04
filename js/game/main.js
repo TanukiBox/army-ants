@@ -11,7 +11,11 @@ import { CONFIG } from './config.js';
 import { t, setLang, getLang, fmt } from './i18n.js';
 import { loadSave, getSave, save, deleteSave, recordRun } from './save.js';
 import { initAudio, setSoundEnabled, sfx } from './audio.js';
-import { buildRun } from './stages.js';
+import { buildRun, AREAS } from './stages.js';
+import { meta, runSetup, refreshMods, finishRun, todayKey, dailyRecord, recordDaily, upgradeCost, buyUpgrade,
+         lockedCards, buyCard, UPGRADE_KEYS } from './meta.js';
+import { drawCards, cardText } from './cards.js';
+import { rngFor } from '../core/rng.js';
 import { Field } from './runner.js';
 import { Siege } from './siege.js';
 import { Boss } from './boss.js';
@@ -225,9 +229,19 @@ function toTitle() {
   sw.bounds = null;
   sw.setVariant('base', { glowColor: 0xff3a2a, glowScale: 0.5 });
   sw.setCount(140);
-  const r = getSave().records;
-  $('title-best').textContent = r.bestStage >= 0 ? t('best', { where: stageLabel(r.bestStage), n: fmt(r.bestCount) }) : '';
+  refreshTitle();
   showScreen('title');
+}
+
+function refreshTitle() {
+  const r = getSave().records;
+  const m = meta();
+  $('title-best').textContent = r.bestStage >= 0 ? t('best', { where: stageLabel(r.bestStage), n: fmt(r.bestCount) }) : '';
+  $('title-honey').textContent = t('honey', { n: fmt(m.honey) });
+  $('title-daily').textContent = t('daily_rec', { date: todayKey(), rec: dailyText() });
+  $('inv-row').classList.toggle('hidden', m.invasionMax <= 0);
+  m.invasion = Math.min(m.invasion, m.invasionMax);
+  $('inv-val').textContent = t('invasion', { n: m.invasion });
 }
 
 function stageLabel(i) {
@@ -235,33 +249,51 @@ function stageLabel(i) {
   return `${a + 1}-${s + 1}`;
 }
 
-function startRun() {
+/** 「エリア2 森 2-3」のような到達場所の名前 */
+function whereLabel(i) {
+  const a = Math.floor(i / CONFIG.run.stagesPerArea);
+  return `${t('area', { n: a + 1 })} ${t('area_' + AREAS[a])} ${stageLabel(i)}`;
+}
+
+function dailyText() {
+  const d = dailyRecord();
+  return d.bestStage < 0 ? t('daily_none') : t('daily_fmt', { where: stageLabel(d.bestStage), n: fmt(d.bestCount) });
+}
+
+function startRun(mode = 'normal') {
   initAudio();
   hideScreens();
-  const seed = 'run:' + Date.now();
+  const setup = runSetup(mode);
   G.run = {
-    seed, stages: buildRun(seed), stageIndex: 0,
-    count: CONFIG.run.startCount, maxCount: CONFIG.run.startCount, weapon: null, armor: 0,
+    ...setup, stages: buildRun(setup.seed), stageIndex: 0,
+    count: setup.startCount, maxCount: setup.startCount, weapon: null, armor: 0,
+    cards: [], honey: 0, shortBy: 0,
   };
+  refreshMods(G.run);
+  G.lastMode = mode;
   G.hud.show(true);
   G.hud.refresh();
   startStage(0);
 }
 
 // 確認用：好きなステージ・匹数・変異から始める（コンソールから ARMY.debugStart(10, 500, 'bullet', 2, 1)）
-G.debugStart = (i, count = 100, weapon = null, wlv = 1, armor = 0) => {
+G.debugStart = (i, count = 100, weapon = null, wlv = 1, armor = 0, cards = []) => {
   startRun();
   G.run.count = count;
   G.run.maxCount = count;
   G.run.weapon = weapon ? { type: weapon, lv: wlv } : null;
   G.run.armor = armor;
+  G.run.cards = cards;
+  refreshMods(G.run);
   startStage(i);
 };
 
 function startStage(i) {
   clearPlay();
+  hideScreens();
   const run = G.run;
   run.stageIndex = i;
+  run.shortBy = 0;
   const stage = run.stages[i];
   G.ground.setArea(stage.areaName);
   const sw = G.swarm;
@@ -276,7 +308,7 @@ function startStage(i) {
     onWipe: () => gameOver('wipe'),
   });
   G.phase = 'runner';
-  G.hud.setStage(stage);
+  G.hud.setStage(stage, run.mode === 'daily');
   G.hud.refresh();
   const title = stage.local === 0 ? t('area', { n: stage.area + 1 }) + '  ' + t('area_' + stage.areaName)
                                    : t('stage', { a: stage.area + 1, s: stage.local + 1 });
@@ -311,7 +343,7 @@ function spawnBoss(kind) {
         G.banner(t('boss_down'), 'good', t('carry', { n: fmt(G.run.count) }));
         sfx.clear();
         G.phase = 'between';
-        G.later(2.2, () => nextStage());
+        G.later(2.2, () => stageCleared());
       }
     },
   });
@@ -332,19 +364,63 @@ function startSiege(stage) {
       G.banner(t('stage_clear'), 'good', t('carry', { n: fmt(G.run.count) }));
       sfx.clear();
       G.phase = 'between';
-      G.later(1.8, () => nextStage());
+      G.later(1.8, () => stageCleared());
     },
     onFail: (hp) => gameOver('siege', hp),
   });
 }
 
-function nextStage() {
+/** ステージを落とした → 法則カードを選んで次へ */
+function stageCleared() {
   if (!G.run) return;
-  const next = G.run.stageIndex + 1;
   recordRun(G.run.stageIndex, G.run.maxCount);
   if (G.run.count <= 0) { gameOver('wipe'); return; }
-  if (next >= G.run.stages.length) { allClear(); return; }
-  startStage(next);
+  if (G.run.stageIndex + 1 >= G.run.stages.length) { allClear(); return; }
+  showCards();
+}
+
+function showCards() {
+  const run = G.run;
+  clearPlay();
+  G.phase = 'cards';
+  // 今日のコースは日付で決まるので、全員が同じ候補になる
+  const rng = rngFor(run.seed + ':cards:' + run.stageIndex);
+  const ids = drawCards(rng, run.pool, run.cards, run.choices);
+  const list = $('card-list');
+  list.innerHTML = '';
+  for (const id of ids) {
+    const c = cardText(id, getLang());
+    const n = run.cards.filter((x) => x === id).length;
+    const b = document.createElement('button');
+    b.className = 'card cat-' + c.cat;
+    b.innerHTML = `<span class="c-cat">${t('cat_' + c.cat)}</span><b>${c.name}${n ? ` <i>×${n + 1}</i>` : ''}</b><span class="c-desc">${c.desc}</span>`;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sfx.mutate();
+      run.cards.push(id);
+      refreshMods(run);
+      startStage(run.stageIndex + 1);
+    });
+    list.appendChild(b);
+  }
+  $('card-sub').textContent = t('next_stage_label', { where: whereLabel(run.stageIndex + 1), n: fmt(run.count) });
+  $('card-owned').textContent = ownedText(run);
+  showScreen('cards');
+}
+
+function ownedText(run) {
+  if (!run.cards.length) return t('owned_cards', { list: t('none') });
+  const counts = {};
+  for (const id of run.cards) counts[id] = (counts[id] || 0) + 1;
+  const list = Object.entries(counts).map(([id, n]) => cardText(id, getLang()).name + (n > 1 ? '×' + n : '')).join('、');
+  return t('owned_cards', { list });
+}
+
+function endRun(cleared) {
+  const run = G.run;
+  const res = finishRun(run, cleared);
+  if (run.mode === 'daily') recordDaily(cleared ? run.stages.length - 1 : run.stageIndex, run.maxCount);
+  return res;
 }
 
 function gameOver(reason, hp = 0) {
@@ -353,14 +429,17 @@ function gameOver(reason, hp = 0) {
   sfx.gameOver();
   const run = G.run;
   recordRun(run.stageIndex, run.maxCount);
+  const res = endRun(false);
   const r = getSave().records;
   G.later(0.9, () => {
     fillResult({
       title: reason === 'siege' ? t('siege_failed') : t('game_over'),
-      reached: stageLabel(run.stageIndex),
+      reached: whereLabel(run.stageIndex),
       maxCount: run.maxCount,
-      shortBy: reason === 'siege' ? hp : 0,
+      shortBy: reason === 'siege' ? hp : Math.max(1, run.shortBy || 1),
       best: t('best', { where: stageLabel(r.bestStage), n: fmt(r.bestCount) }),
+      honey: t('honey_gained', { n: fmt(res.honey), total: fmt(meta().honey) }),
+      daily: t('daily_rec', { date: todayKey(), rec: dailyText() }),
       good: false,
     });
     showScreen('result');
@@ -373,20 +452,73 @@ function allClear() {
   sfx.clear();
   const run = G.run;
   recordRun(run.stages.length - 1, run.maxCount);
+  const res = endRun(true);
   const r = getSave().records;
   G.banner(t('all_clear'), 'good');
   G.later(2.6, () => {
     fillResult({
       title: t('all_clear'), sub: t('all_clear_sub'), reached: t('boss_queen'),
       maxCount: run.maxCount, best: t('best', { where: stageLabel(r.bestStage), n: fmt(r.bestCount) }), good: true,
+      honey: t('honey_gained', { n: fmt(res.honey), total: fmt(meta().honey) }),
+      unlock: res.unlocked ? t('invasion_unlocked', { n: res.unlocked }) : '',
+      daily: t('daily_rec', { date: todayKey(), rec: dailyText() }),
     });
+    G.cleared = true;
     showScreen('result');
   });
 }
 
+/** Xでシェア：最大匹数・到達エリア・今日のコースの記録・ゲームのURL */
+function share() {
+  const run = G.run;
+  if (!run) return;
+  const where = G.cleared ? t('share_clear') : whereLabel(run.stageIndex);
+  const text = t('share_text', { where, n: fmt(run.maxCount), daily: dailyText(), date: todayKey() });
+  const url = 'https://tanukibox.github.io/army-ants/';
+  window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url), '_blank', 'noopener');
+}
+
 function pause() {
   G.paused = true;
+  $('pause-cards').textContent = G.run ? ownedText(G.run) : '';
   showScreen('pause');
+}
+
+// -----------------------------------------------------------------------------
+// 女王の部屋（蜜で永続強化・法則カードの解放）
+// -----------------------------------------------------------------------------
+function openQueen() {
+  const m = meta();
+  $('queen-honey').textContent = t('honey', { n: fmt(m.honey) });
+  const list = $('queen-list');
+  list.innerHTML = '';
+  const row = (title, sub, cost, onBuy) => {
+    const d = document.createElement('div');
+    d.className = 'q-row';
+    const can = cost !== null && m.honey >= cost;
+    d.innerHTML = `<div class="q-text"><b>${title}</b><span>${sub}</span></div>`;
+    const b = document.createElement('button');
+    b.className = 'btn small' + (can ? ' main' : '');
+    b.textContent = cost === null ? t('maxed') : t('buy', { cost: fmt(cost) });
+    b.disabled = !can;
+    b.addEventListener('click', (e) => { e.stopPropagation(); if (onBuy()) { sfx.mutate(); openQueen(); } });
+    d.appendChild(b);
+    list.appendChild(d);
+  };
+  const head = (text) => { const h = document.createElement('div'); h.className = 'q-head'; h.textContent = text; list.appendChild(h); };
+  head(t('queen_upgrades'));
+  for (const key of UPGRADE_KEYS) {
+    const lv = m.upgrades[key], max = CONFIG.upgrades[key].costs.length;
+    row(t('up_' + key), t('lv_of', { n: lv, max }), upgradeCost(key), () => buyUpgrade(key));
+  }
+  head(t('unlock_cards'));
+  const locked = lockedCards();
+  if (!locked.length) { const p = document.createElement('div'); p.className = 'q-note'; p.textContent = t('all_unlocked'); list.appendChild(p); }
+  for (const c of locked) {
+    const tx = cardText(c.id, getLang());
+    row(tx.name, tx.desc, c.cost, () => buyCard(c.id));
+  }
+  showScreen('queen');
 }
 
 // -----------------------------------------------------------------------------
@@ -394,15 +526,21 @@ function pause() {
 // -----------------------------------------------------------------------------
 function setupUi() {
   const click = (id, fn) => $(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.ui(); fn(); });
-  $('title').addEventListener('click', () => { if (G.phase === 'title') startRun(); });
+  click('btn-sortie', () => startRun('normal'));
+  click('btn-daily', () => startRun('daily'));
+  click('btn-queen', () => openQueen());
+  click('btn-queen-close', () => { refreshTitle(); showScreen('title'); });
+  click('inv-dn', () => { const m = meta(); m.invasion = Math.max(0, m.invasion - 1); save(); refreshTitle(); });
+  click('inv-up', () => { const m = meta(); m.invasion = Math.min(m.invasionMax, m.invasion + 1); save(); refreshTitle(); });
   click('btn-title-settings', () => openSettings('title'));
   click('btn-pause', () => { if (isPlaying()) pause(); });
   click('btn-resume', () => { G.paused = false; hideScreens(); });
   click('btn-pause-settings', () => openSettings('pause'));
   click('btn-retire', () => toTitle());
-  click('btn-retry', () => startRun());
-  click('btn-to-title', () => toTitle());
-  click('btn-settings-close', () => showScreen(settingsFrom));
+  click('btn-retry', () => { G.cleared = false; startRun(G.lastMode || 'normal'); });
+  click('btn-to-title', () => { G.cleared = false; toTitle(); });
+  click('btn-share', () => share());
+  click('btn-settings-close', () => { if (settingsFrom === 'title') refreshTitle(); showScreen(settingsFrom); });
   for (const b of document.querySelectorAll('[data-lang]')) {
     b.addEventListener('click', (e) => {
       e.stopPropagation();
