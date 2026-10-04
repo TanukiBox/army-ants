@@ -28,6 +28,8 @@ export function defaultMods() {
     siegeMulPlus: 0,   // 攻城の動く×ゲートの倍率に足す
     honeyMul: 1,       // もらえる蜜
     rowGain: 0,        // ゲートの並びを通るたびに群れがこの割合だけ増える
+    gateCapMul: 1,     // ゲートの上限の倍率
+    gateCapSteps: 0,   // ×÷ゲートの上限を何段上げるか
   };
 }
 
@@ -43,6 +45,9 @@ export const CARDS = [
   { id: 'shield', cat: 'gate', starter: true, stack: true,
     ja: ['盾の法則', '−ゲート・÷ゲートを1回だけ無効にする'], en: ['Law of Shield', 'Cancel one − or ÷ gate'],
     apply: (m) => { m.shields += 1; } },
+  { id: 'limit', cat: 'gate', starter: false, cost: 45, stack: true,
+    ja: ['限界突破の法則', 'ゲートの上限+50%（×÷ゲートは+1段）'], en: ['Law of No Limits', 'Gate caps +50% (× ÷ gates +1 step)'],
+    apply: (m) => { m.gateCapMul += 0.5; m.gateCapSteps += 1; } },
   { id: 'graze', cat: 'gate', starter: false, cost: 40, stack: true,
     ja: ['かすりの法則', 'かすり取りしたとき、＋ゲートの値が+50%'], en: ['Law of the Graze', 'Grazing adds +50% to the + gate'],
     apply: (m) => { m.grazeBonus += 0.5; } },

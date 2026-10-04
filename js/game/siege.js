@@ -13,6 +13,7 @@ import { PixelText, formatCount } from '../core/pixelfont.js';
 
 const HALF = CONFIG.track.width / 2;
 const GOOD = { fill: 0x10306a, edge: 0x3a8cff, text: 0x7ab8ff };
+const BAD = { fill: 0x6a1010, edge: 0xff3a2a, text: 0xff7a68 };
 
 export class Siege {
   /**
@@ -42,7 +43,8 @@ export class Siege {
     this.reserve = G.run.count;
     this.start = G.run.count;
     // 巣の耐久：ステージで決めた値。ただし群れが大きいときは、それに合わせて固くなる
-    const ratio = (CONFIG.siege.hpCountRatio[stage.area] ?? CONFIG.siege.hpCountRatio.at(-1))
+    // 1-1 は練習：少しやわらかい
+    const ratio = (stage.index === 0 ? 0.75 : (CONFIG.siege.hpCountRatio[stage.area] ?? CONFIG.siege.hpCountRatio.at(-1)))
       + (G.run.invasion || 0) * CONFIG.invasion.nestPer;
     this.hp = this.hp0 = Math.max(this.cfg.hp, Math.round(this.reserve * ratio));
     this.units = [];
@@ -50,7 +52,7 @@ export class Siege {
     this.aim = 0;
     this.time = 0;
     this.emitAcc = 0;
-    this.defT = 2.0;
+    this.defT = 0.8;
     // はじめは説明を出して待つ。画面を触ったら（キーなら ← → か スペース）送り出しが始まる
     this.state = 'intro';
     this.unitValue = Math.max(1, Math.ceil(this.reserve / (CONFIG.siege.rate * CONFIG.siege.drainSeconds)));
@@ -107,11 +109,25 @@ export class Siege {
       label.tint = GOOD.text;
       this.top.addChild(gfx, label);
       this.glow.addChild(gl);
-      const m = g.m + G.run.mods.siegeMulPlus;   // 増援の法則
-      label.setText('×' + m);
+      const m = g.m > 0 ? g.m + G.run.mods.siegeMulPlus : g.m;   // 増援の法則（×ゲートだけ）
+      label.setText(m > 0 ? '×' + m : '÷' + (-m));
+      label.tint = m > 0 ? GOOD.text : BAD.text;
       return { ...g, m, y: this.moundY + 60 + g.t * (this.nestY - this.moundY - 120), x: 0, gfx, gl, label };
     });
 
+    // 道をふさぐ石：当たったアリは消える
+    const rs = this.S.props.rocks;
+    this.rocks = (this.cfg.rocks || []).map((r) => {
+      const y = this.moundY + 60 + r.t * (this.nestY - this.moundY - 120);
+      const s = new Sprite(rs.anims.variant[r.variant]);
+      s.anchor.set(rs.anchor[0] / rs.cell[0], rs.anchor[1] / rs.cell[1]);
+      s.position.set(r.x, Math.round(y));
+      s.zIndex = y + 4;
+      this.layer.addChild(s);
+      return { x: r.x, y, r: CONFIG.rock.radii[r.variant] };
+    });
+    // 反撃隊の大きさ：巣の耐久に合わせる（侵攻度で多く）
+    this.defN = Math.max(3, Math.round(this.hp0 * CONFIG.siege.defenderRatio * inv(G.run, 'enemyPer')));
     // 指で狙う（最初に触ったときに送り出しが始まる）
     G.input.onPoint = (cx, cy) => {
       const p = G.toWorld(cx, cy);
@@ -141,13 +157,14 @@ export class Siege {
     this.lblNest = mk('s-lbl nest', t('siege_lbl_nest'));
     this.lblRes = mk('s-lbl res', t('siege_lbl_reserve'));
     // 始まる前だけ出すもの
-    this.lblGates = this.gates.map((g) => mk('s-lbl gate intro', t('siege_lbl_gate', { m: g.m })));
+    this.lblGates = this.gates.map((g) => mk('s-lbl gate intro' + (g.m < 0 ? ' bad' : ''),
+      g.m > 0 ? t('siege_lbl_gate', { m: g.m }) : t('siege_lbl_bad', { m: -g.m })));
     const tips = getSave().tips || (getSave().tips = {});
     const full = (tips.siege || 0) < 3;    // 最初の3回はくわしく
     tips.siege = (tips.siege || 0) + 1;
     save();
     const rules = full
-      ? `<ol><li>${t('siege_rule1')}</li><li>${t('siege_rule2')}</li><li>${t('siege_rule3')}</li><li>${t('siege_rule4')}</li></ol>`
+      ? `<ol><li>${t('siege_rule1')}</li><li>${t('siege_rule2')}</li><li>${t('siege_rule5')}</li><li>${t('siege_rule6')}</li><li>${t('siege_rule3')}</li></ol>`
       : '';
     this.card = mk('s-card intro' + (full ? '' : ' short'),
       `<b>${t('siege_title')}</b><div class="army">${t('siege_army', { n: fmt(this.start), hp: fmt(this.hp0) })}</div>${rules}`);
@@ -213,13 +230,14 @@ export class Siege {
       const span = HALF - g.w / 2 - 8;
       g.x = Math.sin(this.time * g.speed + g.phase) * span;
       const x0 = Math.round(g.x - g.w / 2), y = Math.round(g.y), h = CONFIG.gate.height;
+      const c = g.m > 0 ? GOOD : BAD;
       g.gfx.clear();
       g.gl.clear();
-      g.gfx.rect(x0, y - h / 2, g.w, h).fill({ color: GOOD.fill, alpha: 0.35 });
+      g.gfx.rect(x0, y - h / 2, g.w, h).fill({ color: c.fill, alpha: 0.35 });
       g.gfx.rect(x0 - 2, y - h / 2 - 3, 3, h + 6).fill({ color: 0x0a0608 });
       g.gfx.rect(x0 + g.w - 1, y - h / 2 - 3, 3, h + 6).fill({ color: 0x0a0608 });
-      g.gl.rect(x0, y - h / 2, g.w, 1).fill({ color: GOOD.edge, alpha: 0.9 });
-      g.gl.rect(x0, y + h / 2 - 1, g.w, 1).fill({ color: GOOD.edge, alpha: 0.45 });
+      g.gl.rect(x0, y - h / 2, g.w, 1).fill({ color: c.edge, alpha: 0.9 });
+      g.gl.rect(x0, y + h / 2 - 1, g.w, 1).fill({ color: c.edge, alpha: 0.45 });
       g.label.position.set(Math.round(g.x), y - 2);
     }
   }
@@ -227,16 +245,39 @@ export class Siege {
   updateUnits(dt) {
     const keep = [];
     const mr = CONFIG.siege.moundRadius;
+    const topGate = this.gates.reduce((m, g) => Math.min(m, g.y), this.nestY);
     for (const u of this.units) {
       const py = u.y;
+      // 敵の巣の方へゆるやかに曲がる（ゲートの列を抜けたら強く）
+      {
+        const want = Math.atan2(0 - u.x, -((this.moundY - 20) - u.y));
+        let ang = Math.atan2(u.vx, -u.vy);
+        let d = want - ang;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        const k = u.y < topGate - 10 ? CONFIG.siege.homing : CONFIG.siege.homingLow;
+        ang += Math.max(-1, Math.min(1, d)) * k * dt;
+        const sp = Math.hypot(u.vx, u.vy);
+        u.vx = Math.sin(ang) * sp;
+        u.vy = -Math.cos(ang) * sp;
+      }
       u.x += u.vx * dt;
       u.y += u.vy * dt;
+      // 道のはしで跳ね返る（画面の外へ出ていかない）
+      if (Math.abs(u.x) > HALF - 4) {
+        u.x = Math.sign(u.x) * (HALF - 4);
+        u.vx = -u.vx;
+      }
       // 動くゲートを通ると増える
       for (let gi = 0; gi < this.gates.length; gi++) {
         const g = this.gates[gi];
         if (u.passed.has(gi)) continue;
         if (py >= g.y && u.y < g.y && Math.abs(u.x - g.x) <= g.w / 2) {
           u.passed.add(gi);
+          if (g.m < 0) {   // 赤い÷ゲート：半分になる
+            u.v = u.v > 1 ? Math.floor(u.v / -g.m) : (Math.random() < 0.5 ? 0 : 1);
+            this.G.fx.spark(this.G.fx.glow, u.x, g.y, { color: BAD.edge, life: 0.3, drag: 3, vy: -20 });
+            continue;
+          }
           let made = 0;
           for (let k = 1; k < g.m; k++) {
             const ang = Math.atan2(u.vx, -u.vy) + (Math.random() - 0.5) * 0.12;
@@ -260,6 +301,12 @@ export class Siege {
         }
       }
       if (u.v <= 0) { this.removeUnit(u); continue; }
+      // 石に当たると消える
+      if (this.rocks.some((r) => Math.hypot(u.x - r.x, (u.y - r.y) * 1.25) < r.r)) {
+        this.G.fx.burst(this.G.fx.over, u.x, u.y, 3, { color: [0x3a111b, 0x45434e], speed: [20, 50], life: [0.15, 0.3], drag: 5 });
+        this.removeUnit(u);
+        continue;
+      }
       // 敵の巣に当たる
       if (this.hp > 0 && Math.hypot(u.x, (u.y - (this.moundY - 20)) * 1.15) < mr) {
         this.hit(u);
@@ -315,12 +362,26 @@ export class Siege {
     return n;
   }
 
+  /** シロアリの反撃隊：巣から出て、こちらの巣へ攻めてくる（アリをぶつけて止める） */
   spawnDefenders() {
-    if (!this.cfg.defenders || this.hp <= 0 || this.state !== 'go') return;
+    if (this.hp <= 0 || this.state !== 'go') return;
     this.defT -= this.dtLast;
     if (this.defT > 0) return;
-    this.defT = CONFIG.siege.defenderEvery * (0.8 + Math.random() * 0.4);
-    this.defenders.push(new Defenders(this, (Math.random() - 0.5) * HALF * 1.2, this.moundY + 30, this.cfg.defenders));
+    this.defT = CONFIG.siege.defenderEvery * (0.75 + Math.random() * 0.5);
+    const x = (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * (HALF - 70));
+    this.defenders.push(new Defenders(this, x, this.moundY + 30, this.defN));
+  }
+
+  /** 反撃隊がこちらの巣に着いた：まだ出ていないアリが食べられる */
+  raid(d) {
+    const k = Math.min(this.reserve, Math.ceil(d.n));
+    if (k > 0) {
+      this.reserve -= k;
+      this.G.flash(0xff2020, 0.22);
+      this.G.popupNum(0, this.nestY - 50, '-' + formatCount(k), 0xff7a68);
+      sfx.hurt();
+      this.G.fx.burst(this.G.fx.over, d.x, d.y, 12, { color: [0x8a7048, 0x3a111b, 0x5e1b27], speed: [30, 90], life: [0.3, 0.6], drag: 4 });
+    }
   }
 
   update(dt) {
@@ -340,7 +401,11 @@ export class Siege {
     }
     this.updateUnits(dt);
     for (const d of this.defenders) d.update(dt);
-    this.defenders = this.defenders.filter((d) => { if (d.n <= 0 || d.y > this.nestY) { d.destroy(); return false; } return true; });
+    this.defenders = this.defenders.filter((d) => {
+      if (d.n > 0 && d.y > this.nestY - 34) { this.raid(d); d.n = 0; }
+      if (d.n <= 0) { d.destroy(); return false; }
+      return true;
+    });
     // 表示
     this.resLabel.setText(formatCount(this.reserve));
     this.hpLabel.setText(formatCount(this.hp));
@@ -425,8 +490,12 @@ class Defenders {
   }
 
   update(dt) {
-    this.y += 20 * dt;
-    this.walk += 20 * dt;
+    const sp = CONFIG.siege.defenderSpeed;
+    this.y += sp * dt;
+    this.walk += sp * dt;
+    // 近づくほど、こちらの巣（真ん中）へ寄ってくる
+    const k = Math.max(0, (this.y - this.sg.moundY) / (this.sg.nestY - this.sg.moundY));
+    this.x += (0 - this.x) * Math.min(1, dt * 1.6 * k * k);
     const R = this.r, m = this.sprites.length;
     this.sprites.forEach((s, i) => {
       const rr = R * Math.sqrt((i + 0.5) / Math.max(m, 1)) * (m === 1 ? 0 : 1);

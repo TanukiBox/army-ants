@@ -13,17 +13,17 @@ export const CONFIG = {
     stagesPerArea: 5,       // 1エリアのステージ数（最後がボス）
   },
   runner: {
-    speed: 48,              // 前へ進む速さ
-    segmentGap: 215,        // コースの出来事の間かく
-    introGap: 180,          // スタートから最初の出来事まで
-    outroGap: 200,          // 最後の出来事からゴールまで
+    speed: 80,              // 前へ進む速さ
+    segmentGap: 250,        // コースの出来事の間かく
+    introGap: 240,          // スタートから最初の出来事まで
+    outroGap: 220,          // 最後の出来事からゴールまで
     swarmScreenY: 0.70,     // 群れを画面の上から何割の高さに置くか
   },
 
   // --- 自動射撃 ---------------------------------------------------------------
   fire: {
     interval: 0.22,         // 何秒ごとに一斉に撃つか
-    speed: 320,             // 弾の速さ
+    speed: 440,             // 弾の速さ
     perVolleyBase: 1,       // 一度に撃つ弾の数 = base + perLog2 × log2(匹数)（最大 max）
     perVolleyLog2: 1.0,
     perVolleyMax: 8,
@@ -52,12 +52,14 @@ export const CONFIG = {
   // --- ゲート -----------------------------------------------------------------
   gate: {
     height: 18,             // ゲートの板の高さ（当たり判定）
-    mulLadder: [-3, -2, 2, 3, 4],   // ×÷ゲートの段（マイナスは ÷）。撃つと右へ1段ずつ上がる
+    mulLadder: [-3, -2, 2, 3, 4, 5, 6],   // ×÷ゲートの段（マイナスは ÷）。撃つと右へ1段ずつ上がる
     addHitsPerStep: 3,      // ＋−ゲートの数字を1段上げるのに必要な命中数
-    mulHitsPerStep: 60,     // ×÷ゲートを1段上げるのに必要な命中数
+    addStepRatio: 0.08,     // 1段で上がる数 = はじめの値 × この割合（最低1）
+    mulHitsPerStep: 45,     // ×÷ゲートを1段上げるのに必要な命中数
+    mulCapSteps: 2,         // ×÷ゲートは撃って何段まで上がるか（×2 → ×4、÷2 → ×3）
     maxMulRows: 1,          // 1ステージに出る×÷ゲートの並びの最大数
-    negCapRatio: 0.25,      // −ゲートを撃って上げられる上限 = |はじめの値| × この割合（例：−20 → +5）
-    posCapRatio: 1.5,       // ＋ゲートの上限 = はじめの値 × この割合
+    negCapRatio: 1.0,       // −ゲートを撃って上げられる上限 = |はじめの値| × この割合（例：−20 → +20）
+    posCapRatio: 3.0,       // ＋ゲートの上限 = はじめの値 × この割合（例：+10 → +30）
     slowmoScale: 0.25,      // ×ゲートを通る瞬間のスローモーションの速さ
     slowmoTime: 0.2,        // スローモーションの長さ（本当の秒）
   },
@@ -72,7 +74,7 @@ export const CONFIG = {
   // --- 敵 ---------------------------------------------------------------------
   termites: {
     countRatio: [0.25, 0.45],   // シロアリの数は、少なくとも「出てきたときの群れの数 × この範囲」
-    speed: 24,              // こちらへ進んでくる速さ（地面に対して）。群れを追いかけてはこない
+    speed: 32,              // こちらへ進んでくる速さ（地面に対して）。群れを追いかけてはこない
     wobble: 0.9,            // 左右にゆれる速さ
     wobbleAmp: 10,          // 左右にゆれる幅
     clashRate: 420,         // ぶつかったとき1秒に相殺する数（大きいほど一瞬で決着）
@@ -80,9 +82,9 @@ export const CONFIG = {
   },
   beetle: {
     hpBase: 18, hpPerStage: 7,
-    range: 250,             // この距離に入ると撃ってくる
+    range: 330,             // この距離に入ると撃ってくる
     interval: 1.7,          // 撃つ間かく
-    shotSpeed: 105,         // 弾の速さ（群れを動かしてよけられる速さ）
+    shotSpeed: 125,         // 弾の速さ（群れを動かしてよけられる速さ）
     kills: 0.06,            // 1発当たると群れの何割が減るか（最低 killsMin 匹）
     killsMin: 2,
     radius: 15,
@@ -94,26 +96,30 @@ export const CONFIG = {
 
   // --- 攻城（後半）------------------------------------------------------------
   siege: {
-    rate: 18,               // 1秒に送り出す粒の数
-    drainSeconds: 13,       // 全部送り出すまでのおよその時間（多いときは1粒が何匹分にもなる）
-    unitSpeed: 125,
+    rate: 26,               // 1秒に送り出す粒の数
+    drainSeconds: 11,       // 全部送り出すまでのおよその時間（多いときは1粒が何匹分にもなる）
+    unitSpeed: 175,
+    homing: 1.8,            // ゲートの列を抜けたアリが、敵の巣の方へ曲がる強さ
+    homingLow: 0.35,        // ゲートの列より手前で曲がる強さ（狙った方向へはほぼまっすぐ飛ぶ）
     maxUnits: 420,          // 画面に出す粒の最大数
     aimMax: 62,             // 狙える角度（度）
     keyAim: 70,             // キーボードで狙いを回す速さ（度/秒）
     moundRadius: 34,
     hpRatio: 1.3,           // 敵の巣の耐久 = 予想される群れの数 × この割合
-    hpCountRatio: [0.55, 0.7, 0.75],   // ただし、攻城を始めたときの群れの数 × この割合（エリアごと）より小さくはしない
+    hpCountRatio: [0.9, 1.1, 1.2],   // 攻城を始めたときの群れの数 × この割合（エリアごと）より小さくはしない（×ゲートを使わないと落とせない）
     minCostRatio: 0.5,      // 動くゲートでどれだけ増やしても、巣の耐久 × この割合 の数は必ず失う
-    defenderEvery: 3.2,     // 巣からシロアリの守備隊が出てくる間かく
-    defenderRatio: 0.06,    // 守備隊の数 = 巣の耐久 × この割合
+    defenderEvery: 2.6,     // 巣からシロアリの反撃隊が出てくる間かく
+    defenderRatio: 0.05,    // 反撃隊の数 = 巣の耐久 × この割合
+    defenderSpeed: 62,      // 反撃隊がこちらの巣へ進む速さ。たどり着くと、まだ出ていないアリを食べる
+    rocks: [1, 2, 2],       // 道をふさぐ石の数（エリアごと）。当たったアリは消える
   },
 
   // --- ボス -------------------------------------------------------------------
   bosses: {
-    mantis: { hp: 2600, attackEvery: 2.6, reap: 0.32, sweepWarn: 0.9, stabWarn: 0.8, stabRadius: 46 },
-    spider: { hp: 2800, attackEvery: 2.4, webSlow: 0.3, webTime: 6, webRadius: 42, biteWarn: 0.8,
+    mantis: { hp: 2600, attackEvery: 2.1, reap: 0.32, sweepWarn: 0.9, stabWarn: 0.8, stabRadius: 46 },
+    spider: { hp: 2800, attackEvery: 1.7, webSlow: 0.3, webTime: 6, webRadius: 42, biteWarn: 0.8,
               biteRadius: 40, bite: 0.22 },
-    hornet: { hp: 2000, attackEvery: 2.2, diveWarn: 1.0, diveRadius: 48, dive: 0.3, lowBonus: 2.0 },
+    hornet: { hp: 2000, attackEvery: 1.8, diveWarn: 1.0, diveRadius: 48, dive: 0.3, lowBonus: 2.0 },
     queen:  { hp: 3300, attackEvery: 2.0, diveWarn: 0.9, diveRadius: 62, dive: 0.32, minions: 3,
               minionHp: 60, stingers: 5 },
   },
@@ -143,6 +149,7 @@ export const CONFIG = {
     damage:     { per: 0.1, costs: [20, 30, 45, 65, 90] },   // 弾の威力 +10%
     cocoon:     { per: 0.2, costs: [20, 35, 55] },           // 繭を壊す速さ +20%
     choices:    { costs: [100] },                            // 法則カードの選択肢を4枚に
+    gateCap:    { per: 0.5, costs: [30, 55, 85] },           // ゲートの上限 +50%（×÷は+1段）
   },
   // 侵攻度：1回クリアすると1段上げられる（最大10段）。上げるほど敵が強く、蜜が多い
   invasion: {

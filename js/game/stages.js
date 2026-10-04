@@ -143,7 +143,7 @@ function genStage(s, seed) {
   let y = CONFIG.runner.introGap;
   const ev = [];
   const segs = [];
-  const nGates = boss ? 3 : 4 + (rng() < 0.4 ? 1 : 0);
+  const nGates = boss ? 4 : 5 + (rng() < 0.4 ? 1 : 0);
   for (let i = 0; i < nGates; i++) segs.push('gates');
   segs.push(rng() < 0.4 ? 'cocoon2' : 'cocoon');
   // 敵：エリアが進むほど多い。シロアリの群れ・シロアリの波（いくつもの小さな群れ）・ゴミムシ
@@ -221,17 +221,29 @@ function genSiege(s, seed) {
   const E = expectedAt(s);
   const hp = Math.max(30, nice(E * CONFIG.siege.hpRatio * (s === 0 ? 0.9 : 1)));
   const gates = [];
-  const n = s === 0 ? 1 : 1 + (rng() < 0.5 + area * 0.25 ? 1 : 0) + (area >= 2 && rng() < 0.5 ? 1 : 0);
+  const n = 2 + (area >= 1 && rng() < 0.5 ? 1 : 0) + (area >= 2 ? 1 : 0);
+  // エリア2から、赤い÷ゲート（通すと半分になる）が1つまじる
+  const bad = area >= 1 && rng() < 0.65 ? Math.floor(rng() * n) : -1;
   for (let i = 0; i < n; i++) {
     gates.push({
-      t: 0.30 + 0.42 * (n === 1 ? 0.5 : i / (n - 1)),      // 縦の位置（0 = 敵の巣、1 = 自分の巣）
-      w: 70 + Math.round(rng() * 30),
-      m: rng() < 0.3 + area * 0.15 ? 3 : 2,
-      speed: 0.35 + rng() * 0.45 + area * 0.1,              // 左右に動く速さ
+      t: 0.22 + 0.56 * (i / (n - 1)),                      // 縦の位置（0 = 敵の巣、1 = 自分の巣）
+      w: (s === 0 ? 90 : 64) + Math.round(rng() * 30),
+      m: i === bad ? -2 : (rng() < 0.25 + area * 0.15 ? 3 : 2),
+      speed: (s === 0 ? 0.55 : 0.7) + rng() * 0.5 + area * 0.12,   // 左右に動く速さ
       phase: rng() * Math.PI * 2,
     });
   }
-  return { hp, gates, defenders: s === 0 ? 0 : Math.max(3, Math.round(hp * CONFIG.siege.defenderRatio)) };
+  // 道をふさぐ石（真ん中にひとつ置いて、まっすぐ撃つだけでは届かないように）
+  const rocks = [];
+  const nr = CONFIG.siege.rocks[area] ?? 1;
+  for (let i = 0; i < nr; i++) {
+    rocks.push({
+      t: i === 0 ? 0.12 + rng() * 0.08 : 0.35 + rng() * 0.35,
+      x: i === 0 ? (s === 0 ? 55 : Math.round((rng() - 0.5) * 30)) : Math.round((rng() - 0.5) * (HALF * 2 - 120)),
+      variant: Math.floor(rng() * 2),
+    });
+  }
+  return { hp, gates, rocks };
 }
 
 /** ラン全体の15ステージを作る */

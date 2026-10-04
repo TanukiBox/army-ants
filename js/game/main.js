@@ -325,7 +325,7 @@ function courseEnd(stage) {
     G.phase = 'between';
     G.banner(t('course_clear'), 'good', t('next_siege', { n: fmt(G.run.count) }));
     sfx.clear();
-    G.later(1.6, () => { if (G.phase === 'between' && G.field) startSiege(stage); });
+    G.later(1.1, () => { if (G.phase === 'between' && G.field) startSiege(stage); });
   }
 }
 
@@ -343,7 +343,7 @@ function spawnBoss(kind) {
         G.banner(t('boss_down'), 'good', t('carry', { n: fmt(G.run.count) }));
         sfx.clear();
         G.phase = 'between';
-        G.later(2.2, () => stageCleared());
+        G.later(1.6, () => stageCleared());
       }
     },
   });
@@ -364,7 +364,7 @@ function startSiege(stage) {
       G.banner(t('stage_clear'), 'good', t('carry', { n: fmt(G.run.count) }));
       sfx.clear();
       G.phase = 'between';
-      G.later(1.8, () => stageCleared());
+      G.later(1.3, () => stageCleared());
     },
     onFail: (hp) => gameOver('siege', hp),
   });

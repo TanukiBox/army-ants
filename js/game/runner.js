@@ -30,7 +30,7 @@ class GateRow {
   constructor(field, ev, y) {
     this.f = field;
     this.y = y;
-    this.gates = ev.gates.map((g) => ({ ...g, v0: g.v, hits: 0, touched: 0, passed: 0, bump: 0 }));
+    this.gates = ev.gates.map((g) => ({ ...g, v0: g.v, hits: 0, touched: 0, passed: 0, bump: 0, cap: this.capOf(g, field.G.run) }));
     this.crossed = new Set();
     this.done = false;
     this.applied = new Set();
@@ -75,13 +75,25 @@ class GateRow {
   }
 
   /** 弾が当たって数字が上がる */
+  /** 撃って上げられる上限（女王の部屋の強化・法則カードで高くなる） */
+  capOf(g, run) {
+    const C = CONFIG.gate;
+    const capMul = run?.mods?.gateCapMul ?? 1;
+    if (g.op === 'add') {
+      return g.v > 0 ? Math.round(g.v * C.posCapRatio * capMul) : Math.max(1, Math.round(-g.v * C.negCapRatio * capMul));
+    }
+    const lad = C.mulLadder;
+    const i = Math.max(0, lad.indexOf(g.v));
+    return lad[Math.min(lad.length - 1, i + C.mulCapSteps + (run?.mods?.gateCapSteps ?? 0))];
+  }
+
   hit(g, power = 1) {
     if (g.op === 'add') {
       if (g.v >= g.cap) return false;
       g.hits += power;
       if (g.hits < CONFIG.gate.addHitsPerStep) return true;
       g.hits = 0;
-      const step = Math.max(1, Math.round(Math.abs(g.v0) / 20));
+      const step = Math.max(1, Math.round(Math.abs(g.v0) * CONFIG.gate.addStepRatio));
       g.v = Math.min(g.cap, g.v + step);
       if (g.v === 0) g.v = Math.min(g.cap, step);   // 0 は飛ばす
     } else {
@@ -736,9 +748,7 @@ export class Field {
           const g = r.gateAt(b.x);
           if (g) {
             if (r.hit(g, this.G.run.mods.gateGrow)) sfx.gateHit();
-            this.impact(b, b.x, r.y + 6, false);
-            hit = true;
-            break;
+            this.fx.spark(this.fx.glow, b.x, r.y + 6, { color: gateGood(g) ? 0x7ab8ff : 0xff7a68, life: 0.15, drag: 6 });
           }
         }
       }

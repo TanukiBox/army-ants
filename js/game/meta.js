@@ -3,14 +3,14 @@ import { CONFIG } from './config.js';
 import { getSave, save } from './save.js';
 import { CARDS, defaultMods, buildMods } from './cards.js';
 
-export const UPGRADE_KEYS = ['startCount', 'damage', 'cocoon', 'choices'];
+export const UPGRADE_KEYS = ['startCount', 'damage', 'cocoon', 'gateCap', 'choices'];
 
 export function meta() {
   const d = getSave();
   d.meta = d.meta || {};
   const m = d.meta;
   m.honey ??= 0;
-  m.upgrades = { startCount: 0, damage: 0, cocoon: 0, choices: 0, ...(m.upgrades || {}) };
+  m.upgrades = { startCount: 0, damage: 0, cocoon: 0, choices: 0, gateCap: 0, ...(m.upgrades || {}) };
   m.cards ??= [];          // 解放したカード
   m.clears ??= 0;
   m.invasionMax ??= 0;     // 選べる侵攻度の最大（クリアするたびに1段ずつ増える）
@@ -97,6 +97,8 @@ export function runSetup(mode) {
   const base = defaultMods();
   base.dmgMul *= 1 + U.damage.per * m.upgrades.damage;
   base.cocoonDmg *= 1 + U.cocoon.per * m.upgrades.cocoon;
+  base.gateCapMul += U.gateCap.per * m.upgrades.gateCap;
+  base.gateCapSteps += m.upgrades.gateCap;
   return {
     mode, seed: 'run:' + Date.now(), date: null,
     invasion: Math.min(m.invasion, m.invasionMax),
