@@ -26,7 +26,7 @@ python build.py
 
 1分ほどで、ゲームの素材フォルダ `assets/sprites/` の絵と、Blender の見本 `art/blend/*.blend` が新しくなります。
 
-- アリだけ：`python build.py --only ants`　地面だけ：`python build.py --only ground`
+- 一部だけ：`python build.py --only ants`（`ants` アリ／`ground` 地面／`props` 敵と小物／`bosses` ボス をカンマ区切り）
 - ドット化だけやり直す（Blender を動かさない）：`python build.py --skip-render`
 
 ## できるもの
@@ -72,3 +72,40 @@ python build.py
 - **「Blender が見つかりません」**：Blender を `C:\Program Files\Blender Foundation\` 以外に入れた場合は、
   PowerShell で `$env:BLENDER = "D:\Apps\Blender\blender.exe"` のように場所を教えてから実行してください。
 - うまくいかないときは、PowerShell に出た赤い英語のメッセージ（`Error` の行）をそのまま相談してください。
+
+## ボス（`python build.py --only bosses`）
+
+各エリアの最後に出るボスと、女王が呼び出す働きバチです。どれもプレイヤーの方（画面の下）を向いています。
+
+| 名前 | ボス | マス（ドット） | 動き（行：コマ数） |
+|---|---|---|---|
+| `mantis` | オオカマキリ（暗いオリーブ色、緑に光る目と鎌のとげ） | 176×176 | `idle` 6コマ（鎌を構えてゆれる）／`attack` 8コマ（振り上げ → 振り下ろし → 刈り取り） |
+| `spider` | ジョロウグモ（黒い体に黄色く光る縞、赤く光る目と腹の先） | 176×176 | `idle` 6コマ（前脚で探る）／`attack` 8コマ（前脚で網を掲げ → 投げる → 地面に広がる） |
+| `hornet` | オオスズメバチ（橙の頭、黒い腹に光る帯） | 144×144 | `fly` 4コマ（はばたき）／`dive` 6コマ（はねをたたんで急降下） |
+| `queen` | 女王バチ（大きく、赤く光る目・光る冠・光る大きな針） | 224×224 | `fly` 4コマ／`attack` 8コマ（立ち上がって針を突き出す） |
+| `minion` | 女王が呼ぶ働きバチ | 48×48 | `fly` 4コマ |
+
+- 1枚の絵の中で、横がコマ、縦が動きの種類です。`_glow.png` は光る部分だけの絵です。
+- `hornet` `queen` `minion` は、はねだけの絵 `<名前>_wings.png` が別にあります。ゲームが体の上に半透明（55%）で重ねます。
+- `sprites.json` の `anchor` は、ボスの真下の地面の点（マスの左上から何ドットか）です。ハチは宙に浮いているので、体はこの点より上に描かれます。
+- Blender の見本：`art/blend/boss_<名前>.blend`（左がふだんの動き、右が攻撃。再生ボタンで動きます）。
+- 形と動きは `blender/bosses.py`、書き出しは `blender/render_bosses.py` です。
+
+## 敵と小物（`python build.py --only props`）
+
+| 名前 | 中身 | マス（ドット） | 動き |
+|---|---|---|---|
+| `termite_worker` / `termite_soldier` | シロアリ（敵の群れ）。働きアリは目がなく淡い色、兵隊は橙の頭と長い顎 | 32 / 36 | `walk` 8コマ（下向き） |
+| `beetle` | ミイデラゴミムシ（撃ってくる敵）。黒い羽に橙の模様、頭の下で光るガスを噴く | 64×64 | `walk` 4コマ／`shoot` 4コマ |
+| `cocoon` | 変異の繭。割れ目から光が漏れる（白で描いて、ゲームが変異の色をつける） | 56×48 | `stage` 4コマ（耐久が減るほど割れる） |
+| `player_nest` | 自分の巣（攻城で下に置く） | 128×88 | 1コマ |
+| `termite_mound` | 敵の巣（シロアリの塔）。壊れるほど中の橙の光が見える | 144×176 | `damage` 4コマ |
+| `rocks` / `puddles` | 石（群れがよけて流れる）／水たまり（入るとおぼれる） | 88×80 / 120×76 | 形の違い 3 / 2 |
+
+形は `blender/props.py`、書き出しは `blender/render_props.py` です。
+
+## エリアの地面（`python build.py --only ground`）
+
+`ground/soil_garden.png`（庭の土）、`soil_forest.png`（森の土と苔）、`soil_hive.png`（スズメバチの巣のまわりの木くず）。
+散らす物（`decor.png`）に、草・光るキノコ（シイノトモシビタケのように緑に光る）・苔・巣の紙のかけらを足しました。
+どのエリアで何を散らすかは `js/core/ground.js` の `AREA_DECOR` で決めています。

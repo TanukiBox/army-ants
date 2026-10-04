@@ -21,7 +21,7 @@ function sheetFrames(tex, cell, dirs, frames) {
   return out;
 }
 
-/** 色のついた所をすべて白にした「影絵」のシート（変異の瞬間に群れを光らせるのに使う） */
+/** 色のついた所をすべて白にした「影絵」（変異の瞬間・攻撃を受けた瞬間に光らせるのに使う） */
 function silhouette(tex) {
   const res = tex.source.resource;
   const c = document.createElement('canvas');
@@ -38,10 +38,46 @@ function silhouette(tex) {
   return nearest(Texture.from(c));
 }
 
-export async function loadSprites(base) {
+/** コマを並べたシート（敵・小物・ボス）→ { anims: {名前: [Texture...]}, glow, white, cell, anchor } */
+function makeSheet(entry, col, glow) {
+  const [cw, ch] = entry.cell;
+  const split = (tex) => {
+    const out = {};
+    for (const [name, a] of Object.entries(entry.anims)) {
+      out[name] = [];
+      for (let f = 0; f < a.frames; f++) out[name].push(cut(tex, f * cw, a.row * ch, cw, ch));
+    }
+    return out;
+  };
+  const sheet = {
+    cell: entry.cell, anchor: entry.anchor, info: entry.anims,
+    anims: split(col), glow: glow ? split(glow) : null,
+    _col: col, _white: null,
+    get white() {
+      if (!this._white) this._white = split(silhouette(this._col));
+      return this._white;
+    },
+  };
+  return sheet;
+}
+
+async function loadSheets(base, entries) {
+  const out = {};
+  await Promise.all(Object.entries(entries || {}).map(async ([name, e]) => {
+    const col = nearest(await Assets.load(base + e.file));
+    const glow = e.glow ? nearest(await Assets.load(base + e.glow)) : null;
+    out[name] = makeSheet(e, col, glow);
+  }));
+  return out;
+}
+
+export async function loadSprites(base, onProgress) {
   const manifest = await (await fetch(base + 'sprites.json')).json();
   const A = manifest.ant;
   const ants = {};
+  let done = 0;
+  const total = A.variants.length + 3;
+  const tick = () => onProgress?.(++done / total);
   await Promise.all(A.variants.map(async (name) => {
     const [col, glow] = await Promise.all([
       Assets.load(base + `ants/${name}.png`),
@@ -59,13 +95,22 @@ export async function loadSprites(base) {
         return this._white;
       },
     };
+    tick();
   }));
-  const soil = nearest(await Assets.load(base + manifest.soil.file));
-  const decorSheet = nearest(await Assets.load(base + manifest.decor.file));
+  const soils = {};
+  const files = manifest.soil.files || { garden: manifest.soil.file };
+  for (const [area, f] of Object.entries(files)) soils[area] = nearest(await Assets.load(base + f));
+  tick();
   const D = manifest.decor;
-  const decor = D.items.map((name, i) => ({
-    name,
-    tex: cut(decorSheet, (i % D.cols) * D.cell, Math.floor(i / D.cols) * D.cell, D.cell, D.cell),
-  }));
-  return { manifest, ants, soil, decor, antCell: A.cell, glows: manifest.glows };
+  const decorSheet = nearest(await Assets.load(base + D.file));
+  const decorGlow = D.glow ? nearest(await Assets.load(base + D.glow)) : null;
+  const decor = D.items.map((name, i) => {
+    const x = (i % D.cols) * D.cell, y = Math.floor(i / D.cols) * D.cell;
+    return { name, tex: cut(decorSheet, x, y, D.cell, D.cell), glow: decorGlow ? cut(decorGlow, x, y, D.cell, D.cell) : null };
+  });
+  tick();
+  const props = await loadSheets(base, manifest.props);
+  const bosses = await loadSheets(base, manifest.bosses);
+  tick();
+  return { manifest, ants, soils, soil: soils.garden, decor, props, bosses, antCell: A.cell, glows: manifest.glows };
 }

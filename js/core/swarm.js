@@ -1,5 +1,6 @@
 // アリの群れ：まとまって前へ進み、指の動きに少し遅れて流れるようについてくる。
 // 表示するのは最大300匹。それより多い数は、群れを大きく・密にして、頭上の数字で表す。
+// 数が増えるときは決めた場所（ゲートなど）から仲間が駆け寄り、減るときは決めた場所のアリから消える。
 import { Container, Sprite } from '../../vendor/pixi.min.mjs';
 import { PixelText, formatCount } from './pixelfont.js';
 import { rngFor } from './rng.js';
@@ -23,6 +24,8 @@ export function swarmRadius(n) {
   return R;
 }
 
+let antSerial = 0;
+
 export class Swarm {
   constructor(sprites) {
     this.sprites = sprites;
@@ -35,7 +38,7 @@ export class Swarm {
     this.layer.addChild(this.label);
     this.label.zIndex = 1e9;
     this.ants = [];
-    this.count = 1;
+    this.count = 0;
     this.variant = 'base';
     this.glowColor = 0xff3a2a;
     this.pulse = 'steady';
@@ -43,10 +46,15 @@ export class Swarm {
     this.x = 0;           // 群れの中心
     this.y = 0;
     this.targetX = 0;
+    this.speed = SWARM.speed;
+    this.followMul = 1;   // クモの糸などで動きが遅くなるとき 1 より小さく
+    this.obstacles = [];  // 群れがよけて流れる丸い物 {x, y, r}
+    this.bounds = null;   // 左右のはし {min, max}
+    this.onRemove = null; // アリが消えるとき呼ばれる (ant, opts)
     this.R = 0;
     this.time = 0;
-    this.sweep = null;    // 変異の光が走っている途中なら { t, from, to, next }
-    this.shownCount = 1;
+    this.sweep = null;    // 変異の光が走っている途中なら
+    this.shownCount = 0;
   }
 
   setVariant(name, { glowColor, pulse = 'steady', glowScale = 1, sweep = false } = {}) {
@@ -63,36 +71,68 @@ export class Swarm {
     for (const a of this.ants) a.variant = name;
   }
 
-  setCount(n) {
+  /**
+   * 匹数を決める。
+   * opts.from {x,y} … 増えたアリが現れる場所
+   * opts.pick(ant) … 減らすときの順番（小さい値のアリから消える）。なければ外側から
+   */
+  setCount(n, opts = {}) {
+    n = Math.max(0, Math.round(n));
     this.count = n;
     const full = Math.min(n, SWARM.maxFull);
     const carpet = n > SWARM.maxFull ? Math.min(SWARM.maxCarpet, Math.round((n - SWARM.maxFull) * 0.065)) : 0;
-    const want = full + carpet;
-    while (this.ants.length > want) this.removeAnt(this.ants.pop());
-    while (this.ants.length < want) this.ants.push(this.makeAnt(this.ants.length));
+    const fullAnts = this.ants.filter((a) => !a.carpet);
+    const carpetAnts = this.ants.filter((a) => a.carpet);
+    this._adjust(fullAnts, full, false, opts);
+    this._adjust(carpetAnts, carpet, true, opts);
+    this.ants = fullAnts.concat(carpetAnts);
     this.R = swarmRadius(n);
-    // 隊形：ひまわりの種の並び（中心から外へ均等に広がる）。横に少し長い楕円
-    const rng = rngFor('formation');
-    this.ants.forEach((a, i) => {
-      const carpetAnt = i >= full;
-      const k = carpetAnt ? i - full : i;
-      const tot = carpetAnt ? carpet : full;
-      // 真ん中は密に、ふちはまばらに（ふちのアリは1匹ずつの形が見える）
-      const r = this.R * Math.pow((k + 0.5) / Math.max(tot, 1), 0.62) * (tot === 1 ? 0 : 1);
-      const th = k * GOLDEN + (carpetAnt ? 1.3 : 0);
-      a.ox = r * Math.cos(th) * 1.28 + (rng() - 0.5) * 3;
-      a.oy = r * Math.sin(th) * 0.74 + (rng() - 0.5) * 3;
-      a.carpet = carpetAnt;
-      a.spr.tint = carpetAnt ? 0x8a8282 : 0xffffff;
-      a.glow.alpha = carpetAnt ? 0.5 : 1;
-      // 外側・後ろのアリほど遅れてついてくる（流れるように見える）
-      const rel = this.R > 0 ? r / this.R : 0;
-      a.k = SWARM.follow * (1.35 - 0.55 * rel - 0.25 * Math.max(0, a.oy / Math.max(this.R, 1))) * (0.85 + rng() * 0.3);
-    });
+    this._assignHomes(fullAnts, carpetAnts);
   }
 
-  makeAnt(i) {
-    const rng = rngFor('ant' + i);
+  _adjust(list, want, carpet, opts) {
+    if (list.length > want) {
+      const score = opts.pick || ((a) => -Math.hypot(a.x - this.x, (a.y - this.y) * 1.4) + Math.random() * 6);
+      list.sort((p, q) => score(p) - score(q));
+      const gone = list.splice(0, list.length - want);
+      for (const a of gone) {
+        this.onRemove?.(a, opts);
+        this.removeAnt(a);
+      }
+    }
+    while (list.length < want) {
+      const a = this.makeAnt();
+      a.carpet = carpet;
+      const p = opts.from || { x: this.x, y: this.y };
+      const sp = opts.from ? 10 : this.R * 0.5;
+      a.x = a.px = p.x + (Math.random() - 0.5) * sp;
+      a.y = a.py = p.y + (Math.random() - 0.5) * sp * 0.6;
+      a.variant = this.variant;
+      list.push(a);
+    }
+  }
+
+  /** 隊形：ひまわりの種の並び（真ん中は密に、ふちはまばら）。いまの位置に近い場所を割り当てる */
+  _assignHomes(fullAnts, carpetAnts) {
+    for (const [list, carpet] of [[fullAnts, false], [carpetAnts, true]]) {
+      const tot = list.length;
+      if (!tot) continue;
+      list.sort((p, q) => Math.hypot(p.x - this.x, (p.y - this.y) * 1.4) - Math.hypot(q.x - this.x, (q.y - this.y) * 1.4));
+      list.forEach((a, k) => {
+        const r = this.R * Math.pow((k + 0.5) / tot, 0.62) * (tot === 1 ? 0 : 1);
+        const th = k * GOLDEN + (carpet ? 1.3 : 0);
+        a.ox = r * Math.cos(th) * 1.28 + a.jx;
+        a.oy = r * Math.sin(th) * 0.74 + a.jy;
+        a.spr.tint = carpet ? 0x8a8282 : 0xffffff;
+        // 外側・後ろのアリほど遅れてついてくる（流れるように見える）
+        const rel = this.R > 0 ? r / this.R : 0;
+        a.k = SWARM.follow * (1.35 - 0.55 * rel - 0.25 * Math.max(0, a.oy / Math.max(this.R, 1))) * a.kk;
+      });
+    }
+  }
+
+  makeAnt() {
+    const rng = rngFor('ant' + (antSerial++));
     const spr = new Sprite();
     spr.anchor.set(0.5);
     const glow = new Sprite();
@@ -101,7 +141,8 @@ export class Swarm {
     this.glowLayer.addChildAt(glow, 0);
     return {
       spr, glow, flash: null,
-      x: this.x, y: this.y, vx: 0, ox: 0, oy: 0, k: 6,
+      x: this.x, y: this.y, px: this.x, py: this.y, vx: 0, vy: -this.speed, ox: 0, oy: 0, k: 6,
+      jx: (rng() - 0.5) * 3, jy: (rng() - 0.5) * 3, kk: 0.85 + rng() * 0.3,
       walk: rng() * 20, dir: 0, variant: this.variant,
       wp: rng() * 6.28, wf: 0.8 + rng() * 0.9, wa: 0.6 + rng() * 1.2,
       lunge: 0,   // 顎で弾くときに前へ出る量
@@ -113,6 +154,22 @@ export class Swarm {
     a.spr.destroy();
     a.glow.destroy();
     a.flash?.destroy();
+  }
+
+  clear() {
+    for (const a of this.ants) this.removeAnt(a);
+    this.ants = [];
+    this.count = 0;
+    this.shownCount = 0;
+  }
+
+  /** 群れ全体をある場所へ移す（場面が変わるとき） */
+  teleport(x, y) {
+    const dx = x - this.x, dy = y - this.y;
+    this.x = x;
+    this.y = y;
+    this.targetX = x;
+    for (const a of this.ants) { a.x += dx; a.y += dy; a.px += dx; a.py += dy; }
   }
 
   /** 前（画面の上）にいるアリを k 匹 */
@@ -127,11 +184,18 @@ export class Swarm {
     return out;
   }
 
+  /** くっきり描いているアリの数 */
+  get shown() {
+    let n = 0;
+    for (const a of this.ants) if (!a.carpet) n++;
+    return n;
+  }
+
   update(dt) {
     this.time += dt;
     const t = this.time;
-    this.y -= SWARM.speed * dt;
-    this.x += (this.targetX - this.x) * (1 - Math.exp(-dt * SWARM.follow));
+    this.y -= this.speed * dt;
+    this.x += (this.targetX - this.x) * (1 - Math.exp(-dt * SWARM.follow * this.followMul));
     const S = this.sprites.ants;
 
     // 変異の光：前から後ろへ走る
@@ -143,25 +207,40 @@ export class Swarm {
     }
 
     for (const a of this.ants) {
+      a.px = a.x;
+      a.py = a.y;
       const hx = this.x + a.ox;
-      const nx = a.x + (hx - a.x) * (1 - Math.exp(-dt * a.k));
-      const wob = Math.sin(t * a.wf + a.wp) * a.wa;
-      const vx = (nx - a.x) / Math.max(dt, 1e-3) + Math.cos(t * a.wf + a.wp) * a.wa * a.wf;
-      a.vx += (vx - a.vx) * (1 - Math.exp(-dt * 10));
-      a.x = nx;
+      a.x += (hx - a.x) * (1 - Math.exp(-dt * a.k * this.followMul));
       a.lunge = Math.max(0, a.lunge - dt * 40);
-      a.y = this.y + a.oy + Math.cos(t * a.wf * 0.7 + a.wp) * a.wa * 0.8 - a.lunge;
-      const vy = -SWARM.speed;
-      // 向き：進む向き（0 = 上）を8方向に。揺れでちらつかないよう少しだけ粘る
-      const ang = Math.atan2(a.vx, -vy);
-      let d = Math.round(ang / (Math.PI / 4));
-      d = ((d % 8) + 8) % 8;
-      if (d !== a.dir) {
-        const cur = a.dir * (Math.PI / 4);
-        let diff = Math.abs(((ang - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-        if (diff > Math.PI / 8 + 0.12) a.dir = d;
+      const hy = this.y + a.oy + Math.cos(t * a.wf * 0.7 + a.wp) * a.wa * 0.8 - a.lunge;
+      a.y += (hy - a.y) * (1 - Math.exp(-dt * 9));
+      // 石などをよけて流れる
+      for (const o of this.obstacles) {
+        const dx = a.x - o.x, dy = (a.y - o.y) * 1.25;
+        const d = Math.hypot(dx, dy), rr = o.r + 3;
+        if (d < rr && d > 0.001) {
+          a.x = o.x + (dx / d) * rr;
+          a.y = o.y + (dy / d) * rr / 1.25;
+        }
       }
-      a.walk += Math.hypot(a.vx, vy) * dt;
+      if (this.bounds) a.x = Math.max(this.bounds.min, Math.min(this.bounds.max, a.x));
+      const vx = (a.x - a.px) / Math.max(dt, 1e-3) + Math.cos(t * a.wf + a.wp) * a.wa * a.wf;
+      const vy = (a.y - a.py) / Math.max(dt, 1e-3);
+      a.vx += (vx - a.vx) * (1 - Math.exp(-dt * 10));
+      a.vy += (vy - a.vy) * (1 - Math.exp(-dt * 10));
+      const sp = Math.hypot(a.vx, a.vy);
+      // 向き：進む向き（0 = 上）を8方向に。揺れでちらつかないよう少しだけ粘る
+      if (sp > 4) {
+        const ang = Math.atan2(a.vx, -a.vy);
+        let d = Math.round(ang / (Math.PI / 4));
+        d = ((d % 8) + 8) % 8;
+        if (d !== a.dir) {
+          const cur = a.dir * (Math.PI / 4);
+          const diff = Math.abs(((ang - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+          if (diff > Math.PI / 8 + 0.12) a.dir = d;
+        }
+      }
+      a.walk += Math.max(sp, this.speed * 0.6) * dt;
       const f = Math.floor(a.walk / SWARM.stride) % 8;
       if (sw && a.y < sweepY && a.variant !== sw.next) {
         a.variant = sw.next;
@@ -170,7 +249,7 @@ export class Swarm {
       const V = S[a.variant] || S.base;
       a.spr.texture = V.color[a.dir][f];
       a.glow.texture = V.glow[a.dir][f];
-      const px = Math.round(a.x + wob * 0.3), py = Math.round(a.y);
+      const px = Math.round(a.x), py = Math.round(a.y);
       a.spr.position.set(px, py);
       a.glow.position.set(px, py);
       a.spr.zIndex = py + (a.carpet ? -1000 : 0);
@@ -207,5 +286,10 @@ export class Swarm {
     a.flash.tint = color;
     a.flash.alpha = a.carpet ? 0.6 : 1.1;
     this.flashLayer.addChild(a.flash);
+  }
+
+  /** 群れ全体を光らせる（変異しないときの演出） */
+  flashAll(color) {
+    for (const a of this.ants) this.flashAnt(a, color);
   }
 }

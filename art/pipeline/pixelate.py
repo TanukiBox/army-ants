@@ -128,7 +128,7 @@ def unlit(index):
                 if 0 <= yy < H and 0 <= xx < W and int(index[yy, xx]) in _FAMILY:
                     d = _FAMILY[int(index[yy, xx])]
                     votes[d] = votes.get(d, 0) + 1
-        out[y, x] = max(votes, key=votes.get) if votes else CORE_INDEX
+        out[y, x] = max(votes, key=votes.get) if votes else OUTLINE_INDEX   # 光っていない白い芯は暗い割れ目に
     return out
 
 

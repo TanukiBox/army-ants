@@ -24,16 +24,57 @@
    "bomb2",
    "bomb3",
    "armor1",
+   "mandible1_armor1",
+   "mandible2_armor1",
+   "mandible3_armor1",
+   "fire1_armor1",
+   "fire2_armor1",
+   "fire3_armor1",
+   "bullet1_armor1",
+   "bullet2_armor1",
+   "bullet3_armor1",
+   "bomb1_armor1",
+   "bomb2_armor1",
+   "bomb3_armor1",
    "armor2",
-   "armor3"
+   "mandible1_armor2",
+   "mandible2_armor2",
+   "mandible3_armor2",
+   "fire1_armor2",
+   "fire2_armor2",
+   "fire3_armor2",
+   "bullet1_armor2",
+   "bullet2_armor2",
+   "bullet3_armor2",
+   "bomb1_armor2",
+   "bomb2_armor2",
+   "bomb3_armor2",
+   "armor3",
+   "mandible1_armor3",
+   "mandible2_armor3",
+   "mandible3_armor3",
+   "fire1_armor3",
+   "fire2_armor3",
+   "fire3_armor3",
+   "bullet1_armor3",
+   "bullet2_armor3",
+   "bullet3_armor3",
+   "bomb1_armor3",
+   "bomb2_armor3",
+   "bomb3_armor3"
   ]
  },
  "soil": {
-  "file": "ground/soil.png",
+  "files": {
+   "garden": "ground/soil_garden.png",
+   "forest": "ground/soil_forest.png",
+   "hive": "ground/soil_hive.png"
+  },
   "size": 256
  },
  "decor": {
   "file": "ground/decor.png",
+  "glow": "ground/decor_glow.png",
   "cell": 64,
   "cols": 8,
   "items": [
@@ -50,7 +91,14 @@
    "pebble_c",
    "pebble_d",
    "twig_a",
-   "twig_b"
+   "twig_b",
+   "grass_a",
+   "grass_b",
+   "mushroom_a",
+   "mushroom_b",
+   "moss_a",
+   "paper_a",
+   "paper_b"
   ]
  },
  "glows": {
@@ -59,7 +107,8 @@
   "green": "#5cff3a",
   "purple": "#b85cff",
   "yellow": "#ffd420",
-  "cyan": "#36dcff"
+  "cyan": "#36dcff",
+  "blue": "#3a8cff"
  },
  "palette": [
   "#060408",
@@ -110,6 +159,54 @@
   "#33323b",
   "#45434e",
   "#5a5764",
+  "#0d0a08",
+  "#1e1712",
+  "#33281e",
+  "#4d3d2c",
+  "#6a5538",
+  "#8a7048",
+  "#0e0806",
+  "#24120a",
+  "#3c1d0e",
+  "#5a2c12",
+  "#7a3e18",
+  "#9a5222",
+  "#0c0805",
+  "#1f1408",
+  "#36220c",
+  "#553410",
+  "#784a14",
+  "#9c6418",
+  "#0f0f12",
+  "#22222a",
+  "#383842",
+  "#52525e",
+  "#70707e",
+  "#9494a2",
+  "#05080c",
+  "#0a121a",
+  "#112030",
+  "#1a3044",
+  "#28465e",
+  "#3e6680",
+  "#070906",
+  "#10160c",
+  "#1c2614",
+  "#2c3a1c",
+  "#435626",
+  "#5e7432",
+  "#0f0b08",
+  "#201710",
+  "#332418",
+  "#483322",
+  "#5e432c",
+  "#765638",
+  "#060904",
+  "#0d1508",
+  "#16220d",
+  "#213214",
+  "#2f441b",
+  "#3e5622",
   "#fff6ec",
   "#ff3a2a",
   "#a8141c",
@@ -122,6 +219,350 @@
   "#ffd420",
   "#b88008",
   "#36dcff",
-  "#1080b0"
- ]
+  "#1080b0",
+  "#3a8cff",
+  "#1446a8"
+ ],
+ "props": {
+  "beetle": {
+   "cell": [
+    64,
+    64
+   ],
+   "anchor": [
+    32,
+    34
+   ],
+   "anims": {
+    "walk": {
+     "row": 0,
+     "frames": 4,
+     "fps": 8
+    },
+    "shoot": {
+     "row": 1,
+     "frames": 4,
+     "fps": 10
+    }
+   },
+   "file": "props/beetle.png",
+   "glow": "props/beetle_glow.png"
+  },
+  "cocoon": {
+   "cell": [
+    56,
+    48
+   ],
+   "anchor": [
+    28,
+    28
+   ],
+   "anims": {
+    "stage": {
+     "row": 0,
+     "frames": 4,
+     "fps": 1
+    }
+   },
+   "file": "props/cocoon.png",
+   "glow": "props/cocoon_glow.png"
+  },
+  "player_nest": {
+   "cell": [
+    128,
+    88
+   ],
+   "anchor": [
+    64,
+    50
+   ],
+   "anims": {
+    "idle": {
+     "row": 0,
+     "frames": 1,
+     "fps": 1
+    }
+   },
+   "file": "props/player_nest.png",
+   "glow": "props/player_nest_glow.png"
+  },
+  "puddles": {
+   "cell": [
+    120,
+    76
+   ],
+   "anchor": [
+    60,
+    38
+   ],
+   "anims": {
+    "variant": {
+     "row": 0,
+     "frames": 2,
+     "fps": 1
+    }
+   },
+   "file": "props/puddles.png"
+  },
+  "rocks": {
+   "cell": [
+    88,
+    80
+   ],
+   "anchor": [
+    44,
+    50
+   ],
+   "anims": {
+    "variant": {
+     "row": 0,
+     "frames": 3,
+     "fps": 1
+    }
+   },
+   "file": "props/rocks.png"
+  },
+  "termite_mound": {
+   "cell": [
+    144,
+    176
+   ],
+   "anchor": [
+    72,
+    136
+   ],
+   "anims": {
+    "damage": {
+     "row": 0,
+     "frames": 4,
+     "fps": 1
+    }
+   },
+   "file": "props/termite_mound.png",
+   "glow": "props/termite_mound_glow.png"
+  },
+  "termite_soldier": {
+   "cell": [
+    36,
+    36
+   ],
+   "anchor": [
+    18,
+    20
+   ],
+   "anims": {
+    "walk": {
+     "row": 0,
+     "frames": 8,
+     "fps": 14
+    }
+   },
+   "file": "props/termite_soldier.png"
+  },
+  "termite_worker": {
+   "cell": [
+    32,
+    32
+   ],
+   "anchor": [
+    16,
+    18
+   ],
+   "anims": {
+    "walk": {
+     "row": 0,
+     "frames": 8,
+     "fps": 14
+    }
+   },
+   "file": "props/termite_worker.png"
+  }
+ },
+ "bosses": {
+  "hornet": {
+   "cell": [
+    144,
+    144
+   ],
+   "anchor": [
+    72,
+    87
+   ],
+   "anims": {
+    "fly": {
+     "row": 0,
+     "frames": 4,
+     "fps": 18
+    },
+    "dive": {
+     "row": 1,
+     "frames": 6,
+     "fps": 12
+    }
+   },
+   "file": "bosses/hornet.png",
+   "glow": "bosses/hornet_glow.png"
+  },
+  "hornet_wings": {
+   "cell": [
+    144,
+    144
+   ],
+   "anchor": [
+    72,
+    87
+   ],
+   "anims": {
+    "fly": {
+     "row": 0,
+     "frames": 4,
+     "fps": 18
+    },
+    "dive": {
+     "row": 1,
+     "frames": 6,
+     "fps": 12
+    }
+   },
+   "overlayOf": "hornet",
+   "alpha": 0.55,
+   "file": "bosses/hornet_wings.png"
+  },
+  "mantis": {
+   "cell": [
+    176,
+    176
+   ],
+   "anchor": [
+    88,
+    85
+   ],
+   "anims": {
+    "idle": {
+     "row": 0,
+     "frames": 6,
+     "fps": 7
+    },
+    "attack": {
+     "row": 1,
+     "frames": 8,
+     "fps": 12
+    }
+   },
+   "file": "bosses/mantis.png",
+   "glow": "bosses/mantis_glow.png"
+  },
+  "minion": {
+   "cell": [
+    48,
+    48
+   ],
+   "anchor": [
+    24,
+    34
+   ],
+   "anims": {
+    "fly": {
+     "row": 0,
+     "frames": 4,
+     "fps": 18
+    }
+   },
+   "file": "bosses/minion.png",
+   "glow": "bosses/minion_glow.png"
+  },
+  "minion_wings": {
+   "cell": [
+    48,
+    48
+   ],
+   "anchor": [
+    24,
+    34
+   ],
+   "anims": {
+    "fly": {
+     "row": 0,
+     "frames": 4,
+     "fps": 18
+    }
+   },
+   "overlayOf": "minion",
+   "alpha": 0.55,
+   "file": "bosses/minion_wings.png"
+  },
+  "queen": {
+   "cell": [
+    224,
+    224
+   ],
+   "anchor": [
+    112,
+    154
+   ],
+   "anims": {
+    "fly": {
+     "row": 0,
+     "frames": 4,
+     "fps": 16
+    },
+    "attack": {
+     "row": 1,
+     "frames": 8,
+     "fps": 11
+    }
+   },
+   "file": "bosses/queen.png",
+   "glow": "bosses/queen_glow.png"
+  },
+  "queen_wings": {
+   "cell": [
+    224,
+    224
+   ],
+   "anchor": [
+    112,
+    154
+   ],
+   "anims": {
+    "fly": {
+     "row": 0,
+     "frames": 4,
+     "fps": 16
+    },
+    "attack": {
+     "row": 1,
+     "frames": 8,
+     "fps": 11
+    }
+   },
+   "overlayOf": "queen",
+   "alpha": 0.55,
+   "file": "bosses/queen_wings.png"
+  },
+  "spider": {
+   "cell": [
+    176,
+    176
+   ],
+   "anchor": [
+    88,
+    75
+   ],
+   "anims": {
+    "idle": {
+     "row": 0,
+     "frames": 6,
+     "fps": 6
+    },
+    "attack": {
+     "row": 1,
+     "frames": 8,
+     "fps": 10
+    }
+   },
+   "file": "bosses/spider.png",
+   "glow": "bosses/spider_glow.png"
+  }
+ }
 }

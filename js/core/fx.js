@@ -35,7 +35,7 @@ function pixTex(w, h, fn) {
 }
 
 const TEX = {};
-function textures() {
+export function textures() {
   if (TEX.dot) return TEX;
   TEX.dot = pixTex(1, 1, () => 1);
   TEX.dot2 = pixTex(2, 2, () => 1);

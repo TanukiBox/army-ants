@@ -86,6 +86,8 @@ def main():
         groups = {}
         for n in names:
             s = A.spec_from_name(n)
+            if s.weapon and s.armor:     # 見本は単独の変異だけ（組み合わせは多すぎるので入れない）
+                continue
             key = s.weapon or ("armor" if s.armor else "base")
             groups.setdefault(key, []).append(s)
         for key, specs in groups.items():

@@ -1,6 +1,6 @@
 """地面の部品の元画像をレンダリングする（Blender の中で動く）。
 
-  soil.png  … 土のタイル（tile × tile ドット。上下左右にすき間なく並べられる）
+  soil_<エリア>.png … 土のタイル（tile × tile ドット。上下左右にすき間なく並べられる）
   decor.png … 落ち葉・小石・小枝を cell × cell のマスに並べたもの
 
   blender -b --factory-startup -P render_ground.py -- --out <dir> [--tile 128 --cell 48 --ss 8 --ppu 20]
@@ -22,12 +22,12 @@ import ground as G  # noqa: E402
 DECOR_COLS = 8
 
 
-def soil_scene(tile, ss, ppu, res=160):
+def soil_scene(tile, ss, ppu, res=160, area="garden"):
     C.reset_scene()
     C.set_resolution(tile * ss, tile * ss)
     w = tile / ppu
     h = w / math.sin(math.radians(C.ELEVATION_DEG))   # 画面の高さ w に写る地面の奥行き
-    C.link(bpy.data.objects.new("soil", G.soil_tile(w, h, res)))
+    C.link(bpy.data.objects.new("soil", G.soil_tile(w, h, res, area)))
     C.oblique_camera(w)
 
 
@@ -60,19 +60,21 @@ def main():
     p.add_argument("--ss", type=int, default=8)
     p.add_argument("--ppu", type=float, default=20.0)
     p.add_argument("--blend", default="")
+    p.add_argument("--areas", default="garden")
     a = p.parse_args(argv)
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
-    print("== soil", flush=True)
-    soil_scene(a.tile, a.ss, a.ppu)
-    C.render_to(os.path.join(out, "soil.png"))
+    for area in a.areas.split(","):
+        print("== soil", area, flush=True)
+        soil_scene(a.tile, a.ss, a.ppu, area=area)
+        C.render_to(os.path.join(out, f"soil_{area}.png"))
     print("== decor", flush=True)
     render_decor(os.path.join(out, "decor.png"), a.cell, a.ss, a.ppu)
     if a.blend:
         bl = os.path.abspath(a.blend)
         os.makedirs(bl, exist_ok=True)
         save_blend(os.path.join(bl, "ground_decor.blend"))
-        soil_scene(a.tile, a.ss, a.ppu, res=48)      # 見本は軽くするため粗いメッシュで保存
+        soil_scene(a.tile, a.ss, a.ppu, res=48, area="forest")   # 見本は軽くするため粗いメッシュで保存
         save_blend(os.path.join(bl, "ground_soil.blend"))
 
 

@@ -2,13 +2,160 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050304">
 <title>ARMY ANTS</title>
-<!-- 開発中：いまはフェーズ1の「見た目の試作」へ案内する。ゲーム本体ができたら置きかえる -->
-<meta http-equiv="refresh" content="0; url=prototype/">
-<style>body { background: #050304; color: #e8dcd0; font-family: system-ui, sans-serif; padding: 24px; }</style>
+<meta name="description" content="アリの群れでゲートを抜けて仲間を増やし、実在のアリの能力で変異しながら敵の巣を落とす群れランナー（Tanuki Box）">
+<style>
+  :root {
+    --bg: #050304;
+    --panel: rgba(12, 7, 9, 0.9);
+    --line: #3a111b;
+    --text: #ece0d4;
+    --dim: #8c7a72;
+    --accent: #ff3a2a;
+    --good: #6ab0ff;
+    --gold: #ffd36a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  #wrap { position: fixed; inset: 0; display: flex; justify-content: center; }
+  #stage { position: relative; height: 100%; width: 100%; max-width: calc(100vh * 0.62); overflow: hidden; }
+  #play { position: absolute; inset: 0; }
+  #play canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  .hidden { display: none !important; }
+
+  /* --- 遊んでいるときの表示 --- */
+  #hud { position: absolute; left: 0; right: 0; top: 0; padding: max(8px, env(safe-area-inset-top)) 10px 0;
+    pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
+  #hud-row { display: flex; align-items: flex-start; gap: 8px; }
+  #hud-stage { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; color: var(--text); }
+  #hud-slots { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 11px; color: var(--dim); }
+  #hud-slots i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; box-shadow: 0 0 6px currentColor; vertical-align: 1px; }
+  #hud-slots i.empty { background: #2a1a1e; box-shadow: none; }
+  #hud-slots b { color: var(--text); font-weight: 700; }
+  #btn-pause { margin-left: auto; pointer-events: auto; width: 40px; height: 40px; border-radius: 8px;
+    border: 1px solid var(--line); background: rgba(20, 10, 13, 0.7); color: var(--text); font-size: 16px; }
+  #boss { position: absolute; left: 50%; transform: translateX(-50%); top: max(56px, calc(env(safe-area-inset-top) + 48px));
+    width: min(72%, 300px); pointer-events: none; text-align: center; }
+  #boss-name { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; color: #ffb4a0; text-shadow: 0 0 8px #ff3a2a, 0 1px 2px #000; }
+  #boss .bar { margin-top: 3px; height: 7px; background: #140608; border: 1px solid #5a1420; }
+  #boss-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #a8141c, #ff5a3a); box-shadow: 0 0 8px #ff3a2a; }
+  #pops { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .pop { position: absolute; transform: translate(-50%, -50%); font-weight: 800; font-size: 15px; white-space: nowrap;
+    animation: pop 1.25s ease-out forwards; text-shadow: 0 0 8px currentColor, 0 1px 2px #000; }
+  .pop.graze { color: var(--gold); font-size: 17px; }
+  .pop.mutate { color: #fff; font-size: 16px; }
+  .pop.passed { color: #8c8c9a; }
+  @keyframes pop { 0% { opacity: 0; margin-top: 6px; } 12% { opacity: 1; margin-top: 0; } 75% { opacity: 1; } 100% { opacity: 0; margin-top: -26px; } }
+  #banner { position: absolute; left: 0; right: 0; top: 30%; text-align: center; pointer-events: none; opacity: 0; }
+  #banner.show { animation: banner 2.2s ease-out forwards; }
+  #banner .b-main { font-size: 26px; font-weight: 900; letter-spacing: 0.08em; text-shadow: 0 0 14px #ff3a2a, 0 2px 3px #000; }
+  #banner .b-sub { margin-top: 6px; font-size: 13px; color: var(--dim); text-shadow: 0 1px 2px #000; }
+  #banner.good .b-main { text-shadow: 0 0 14px #3a8cff, 0 2px 3px #000; }
+  #banner.boss .b-main { color: #ffd0c0; font-size: 30px; text-shadow: 0 0 18px #ff2a1a, 0 0 4px #ff2a1a, 0 2px 3px #000; }
+  #banner.area .b-main { font-size: 24px; }
+  @keyframes banner { 0% { opacity: 0; transform: scale(1.25); } 10% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
+  #flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen; }
+
+  /* --- 画面（タイトル・一時停止・設定・結果） --- */
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 24px; text-align: center; }
+  .screen.dim { background: rgba(5, 3, 4, 0.82); }
+  .btn { min-width: 200px; height: 48px; border-radius: 10px; border: 1px solid var(--line); background: #160a0e;
+    color: var(--text); font: inherit; font-size: 16px; font-weight: 700; letter-spacing: 0.05em; }
+  .btn.main { background: #5a1420; border-color: var(--accent); box-shadow: 0 0 14px rgba(255, 58, 42, 0.4); }
+  .btn.small { min-width: 0; height: 38px; font-size: 13px; padding: 0 14px; }
+  .btn.on { background: #5a1420; border-color: var(--accent); }
+  #title { cursor: pointer; background: linear-gradient(to bottom, rgba(5,3,4,0.15), rgba(5,3,4,0.05) 40%, rgba(5,3,4,0.75)); }
+  #logo { font-size: 46px; font-weight: 900; letter-spacing: 0.14em; color: #f4e2d6;
+    text-shadow: 0 0 18px #ff2a1a, 0 0 4px #ff2a1a, 0 3px 4px #000; margin-top: -20vh; }
+  #logo-ja { font-size: 13px; letter-spacing: 0.5em; color: #c49a8e; margin-top: -6px; }
+  #title-sub { font-size: 14px; color: var(--text); text-shadow: 0 1px 3px #000; }
+  #title-tap { margin-top: 18vh; font-size: 16px; font-weight: 700; animation: blink 1.4s ease-in-out infinite; text-shadow: 0 0 10px #ff3a2a; }
+  #title-how { font-size: 12px; color: var(--dim); }
+  #title-best { font-size: 12px; color: var(--gold); min-height: 1em; }
+  #btn-title-settings { position: absolute; right: 12px; top: max(12px, env(safe-area-inset-top)); }
+  .credit { position: absolute; bottom: max(10px, env(safe-area-inset-bottom)); font-size: 11px; color: #5a4a44; }
+  @keyframes blink { 50% { opacity: 0.35; } }
+  .heading { font-size: 22px; font-weight: 900; letter-spacing: 0.08em; margin-bottom: 8px; }
+  .set-row { display: flex; align-items: center; gap: 8px; }
+  .set-row .lbl { width: 80px; text-align: right; font-size: 13px; color: var(--dim); }
+  #delete-msg { font-size: 12px; color: var(--gold); min-height: 1em; }
+  #res-title { font-size: 30px; font-weight: 900; letter-spacing: 0.08em; }
+  #res-title.bad { color: #ffb4a0; text-shadow: 0 0 14px #ff2a1a; }
+  #res-title.good { color: #d8ecff; text-shadow: 0 0 14px #3a8cff; }
+  #res-sub { font-size: 13px; color: var(--dim); }
+  #res-short { font-size: 22px; font-weight: 900; color: var(--gold); text-shadow: 0 0 12px rgba(255, 200, 80, 0.6); margin: 6px 0; }
+  .res-line { font-size: 14px; }
+  #res-best { font-size: 12px; color: var(--dim); margin-bottom: 10px; }
+  #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--dim); }
+  #loading .track { width: 160px; height: 3px; background: #1a0c10; }
+  #load-bar { height: 100%; width: 0; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+</style>
 </head>
 <body>
-<p>ARMY ANTS（開発中）… <a href="prototype/" style="color:#ff6a5a">見た目の試作を開く</a></p>
+<div id="wrap"><div id="stage">
+  <div id="play"></div>
+  <div id="pops"></div>
+  <div id="flash"></div>
+  <div id="banner"></div>
+
+  <div id="hud" class="hidden">
+    <div id="hud-row">
+      <div>
+        <div id="hud-stage"></div>
+        <div id="hud-slots"><div id="hud-weapon"></div><div id="hud-armor"></div></div>
+      </div>
+      <button id="btn-pause" aria-label="pause">❚❚</button>
+    </div>
+  </div>
+  <div id="boss" class="hidden"><div id="boss-name"></div><div class="bar"><div id="boss-fill"></div></div></div>
+
+  <div id="title" class="screen hidden">
+    <div id="logo">ARMY ANTS</div>
+    <div id="logo-ja">アーミーアンツ</div>
+    <div id="title-sub" data-t="title_sub"></div>
+    <div id="title-tap" data-t="tap_start"></div>
+    <div id="title-how" data-t="how_to"></div>
+    <div id="title-best"></div>
+    <button id="btn-title-settings" class="btn small" data-t="settings"></button>
+    <div class="credit">Tanuki Box</div>
+  </div>
+
+  <div id="pause" class="screen dim hidden">
+    <div class="heading" data-t="paused"></div>
+    <button id="btn-resume" class="btn main" data-t="resume"></button>
+    <button id="btn-pause-settings" class="btn" data-t="settings"></button>
+    <button id="btn-retire" class="btn" data-t="retire"></button>
+  </div>
+
+  <div id="settings" class="screen dim hidden">
+    <div class="heading" data-t="settings"></div>
+    <div class="set-row"><span class="lbl" data-t="language"></span>
+      <button class="btn small" data-lang="ja">日本語</button><button class="btn small" data-lang="en">English</button></div>
+    <div class="set-row"><span class="lbl" data-t="sound"></span>
+      <button class="btn small" data-sound="on" data-t="on"></button><button class="btn small" data-sound="off" data-t="off"></button></div>
+    <button id="btn-delete" class="btn small" data-t="delete_data" style="margin-top:14px"></button>
+    <div id="delete-msg"></div>
+    <button id="btn-settings-close" class="btn" data-t="close"></button>
+  </div>
+
+  <div id="result" class="screen dim hidden">
+    <div id="res-title"></div>
+    <div id="res-sub"></div>
+    <div id="res-short"></div>
+    <div id="res-reached" class="res-line"></div>
+    <div id="res-max" class="res-line"></div>
+    <div id="res-best"></div>
+    <button id="btn-retry" class="btn main" data-t="retry"></button>
+    <button id="btn-to-title" class="btn" data-t="to_title"></button>
+  </div>
+
+  <div id="loading"><div class="msg">Loading…</div><div class="track"><div id="load-bar"></div></div></div>
+</div></div>
+<script type="module" src="js/game/main.js"></script>
 </body>
 </html>

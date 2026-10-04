@@ -48,28 +48,45 @@ def fbm(u, v, base, octaves, k):
 # ---------------------------------------------------------------------------
 # 土のタイル
 # ---------------------------------------------------------------------------
-def soil_tile(w, h, res=160):
-    """w × h（地面の長さ）の土。3×3 に並べた凸凹のメッシュを返す。"""
+# エリアごとの地面：色の段・盛り上がりの強さ・ひびの多さ・砂つぶ・繊維のすじ・苔の色の段
+SOIL_STYLES = {
+    "garden": dict(ramp="soil", amp=0.40, crack=0.025, grit=0.74, fiber=0.0, patch=None),
+    "forest": dict(ramp="soil", amp=0.46, crack=0.010, grit=0.78, fiber=0.0, patch="grass"),
+    "hive":   dict(ramp="clay", amp=0.26, crack=0.018, grit=0.84, fiber=0.035, patch=None),
+}
+
+
+def soil_tile(w, h, res=160, area="garden"):
+    """w × h（地面の長さ）の土。3×3 に並べた凸凹のメッシュを返す。
+    area でエリアの地面（庭の土・森の落ち葉と苔・スズメバチの巣のまわりの木くず）を変える。"""
+    st = SOIL_STYLES[area]
     ry = int(round(res * h / w))
     # 1周期ぶんだけ計算して、3×3 に使い回す（周期があるので継ぎ目が出ない）
-    zs, tones = [], []
+    zs, tones, moss = [], [], []
     for j in range(ry):
-        zr, tr = [], []
+        zr, tr, mr = [], [], []
         for i in range(res):
             fu, fv = i / res, j / ry
             # 粗い土くれ＋細かいざらつき＋ところどころの小石の盛り上がり
-            z = (fbm(fu, fv, 5, 4, 1) - 0.5) * 0.40
+            z = (fbm(fu, fv, 5, 4, 1) - 0.5) * st["amp"]
             z += (fbm(fu, fv, 20, 2, 9) - 0.5) * 0.12
             crack = abs(fbm(fu, fv, 7, 2, 31) - 0.5)          # ひび割れ（細い溝）
-            if crack < 0.025:
-                z -= (0.025 - crack) * 5.0
+            if crack < st["crack"]:
+                z -= (st["crack"] - crack) * 5.0
             grit = fbm(fu, fv, 56, 1, 23)                     # 細かい砂つぶ
-            if grit > 0.74:
-                z += (grit - 0.74) * 0.8
+            if grit > st["grit"]:
+                z += (grit - st["grit"]) * 0.8
+            if st["fiber"]:                                   # 木くず（スズメバチの巣の紙）のすじ
+                z += math.sin((fu * 2 + fbm(fu, fv, 4, 2, 57) * 1.5) * math.pi * 2 * 9) * st["fiber"]
+            m = st["patch"] and fbm(fu, fv, 9, 3, 77) * 0.7 + fbm(fu, fv, 30, 1, 78) * 0.3 > 0.60
+            if m:
+                z += 0.05 + (fbm(fu, fv, 48, 1, 79) - 0.5) * 0.12   # 苔はふかふか盛り上がる
             zr.append(z)
             tr.append(fbm(fu, fv, 3, 3, 41))          # 色のむら（湿った所・乾いた所）
+            mr.append(m)
         zs.append(zr)
         tones.append(tr)
+        moss.append(mr)
     bm = bmesh.new()
     nx, ny = res * 3, ry * 3
     verts, vals = [], []
@@ -84,13 +101,18 @@ def soil_tile(w, h, res=160):
         for i in range(nx):
             f = bm.faces.new((verts[j][i], verts[j][i + 1], verts[j + 1][i + 1], verts[j + 1][i]))
             f.smooth = True
-    me = bpy.data.meshes.new("soil")
+            if moss[j % ry][i % res]:      # 苔の生えた所
+                f.material_index = 1
+    me = bpy.data.meshes.new("soil_" + area)
     bm.to_mesh(me)
     bm.free()
     attr = me.attributes.new("tone", "FLOAT", "POINT")   # 頂点は作った順に並ぶ
     attr.data.foreach_set("value", vals)
-    me.materials.append(C.toon_material("soil", "soil", light=(0.40, 0.70), rim=0.75,
+    me.materials.append(C.toon_material("soil_" + st["ramp"], st["ramp"], light=(0.40, 0.70), rim=0.75,
                                         spec=(0.99, 0.999), tone_attr="tone"))
+    if st["patch"]:
+        me.materials.append(C.toon_material("moss", st["patch"], light=(0.35, 0.70), rim=0.7,
+                                            spec=(0.99, 0.999), tone_attr="tone"))
     return me
 
 
@@ -195,6 +217,74 @@ def twig(name, length, thick):
 
 
 # 名前, 作り方, ゲームでの大きさの目安（cell 内に収める）
+def grass(name, n=9, height=0.55):
+    """草の株（庭）。細い葉が外へ反る。"""
+    rng = C.rng_for(name)
+    mat = C.toon_material("grass", "grass", light=(0.35, 0.75), rim=0.6)
+    parts = C.Parts()
+    for k in range(n):
+        a = 2 * math.pi * k / n + rng.uniform(-0.3, 0.3)
+        L = height * rng.uniform(0.6, 1.0)
+        d = Vector((math.cos(a), math.sin(a), 0))
+        pts = [d * 0.04, d * L * 0.35 + Vector((0, 0, L * 0.45)), d * L * 0.8 + Vector((0, 0, L * 0.55)),
+               d * L * 1.1 + Vector((0, 0, L * 0.35))]
+        parts.add(C.tube(pts, [0.05, 0.04, 0.03, 0.0], 5), mat)
+    return parts.to_mesh(name)
+
+
+def mushroom(name, n=3):
+    """光るキノコ（森）。シイノトモシビタケのように、かさが緑に光る。"""
+    rng = C.rng_for(name)
+    stem = C.toon_material("mush_stem", "silk", light=(0.40, 0.80))
+    cap = C.glow_material("glow_green_dim", "green", dim=True)
+    parts = C.Parts()
+    for k in range(n):
+        x, y = rng.uniform(-0.25, 0.25), rng.uniform(-0.2, 0.2)
+        hgt = rng.uniform(0.18, 0.34)
+        r = rng.uniform(0.09, 0.15)
+        parts.add(C.tube([(x, y, 0), (x + 0.02, y, hgt)], [0.03, 0.025], 6), stem)
+        bm = C.ellipsoid((x + 0.02, y, hgt), (r, r, r * 0.55), 12, 8)
+        C.dome(bm, hgt - r * 0.1)
+        parts.add(bm, cap)
+    return parts.to_mesh(name)
+
+
+def moss(name, size=0.7):
+    """苔のかたまり（森）。小さなこぶが集まる。"""
+    rng = C.rng_for(name)
+    mat = C.toon_material("moss_clump", "grass", light=(0.35, 0.72), rim=0.6)
+    parts = C.Parts()
+    for _ in range(14):
+        a, r = rng.uniform(0, 2 * math.pi), rng.uniform(0, size * 0.6)
+        s_ = rng.uniform(0.07, 0.14)
+        parts.add(C.ellipsoid((r * math.cos(a), r * math.sin(a), s_ * 0.4), (s_, s_, s_ * 0.6), 8, 6), mat)
+    return parts.to_mesh(name)
+
+
+def paper(name, w=0.9, h=0.6):
+    """スズメバチの巣の紙のかけら（最終エリア）。しま模様の曲がった殻。"""
+    rng = C.rng_for(name)
+    a_ = C.toon_material("paper_a", "clay", light=(0.30, 0.65))
+    b_ = C.toon_material("paper_b", "amber", light=(0.45, 0.85))
+    bm = bmesh.new()
+    nx, ny = 10, 6
+    vs = [[bm.verts.new(((i / nx - 0.5) * w, (j / ny - 0.5) * h,
+                         0.25 * math.sin(math.pi * j / ny) * h + 0.02)) for i in range(nx + 1)]
+          for j in range(ny + 1)]
+    for j in range(ny):
+        for i in range(nx):
+            f = bm.faces.new((vs[j][i], vs[j][i + 1], vs[j + 1][i + 1], vs[j + 1][i]))
+            f.smooth = True
+    parts = C.Parts()
+
+    def stripe(ring, f):
+        return b_ if int((f.calc_center_median().y / h + 0.5) * 7) % 2 else None
+    parts.add(bm, a_, stripe)
+    me = parts.to_mesh(name)
+    me.transform(Matrix.Rotation(rng.uniform(-0.5, 0.5), 4, "Z"))
+    return me
+
+
 DECOR = [
     ("leaf_brown_a", lambda: leaf("leaf_brown_a", 2.10, 0.62, "leaf", "oval")),
     ("leaf_brown_b", lambda: leaf("leaf_brown_b", 1.70, 0.55, "leaf", "oval", curl=0.5)),
@@ -210,4 +300,11 @@ DECOR = [
     ("pebble_d", lambda: pebble("pebble_d", 0.50)),
     ("twig_a", lambda: twig("twig_a", 2.40, 0.065)),
     ("twig_b", lambda: twig("twig_b", 1.60, 0.050)),
+    ("grass_a", lambda: grass("grass_a", 9, 0.60)),
+    ("grass_b", lambda: grass("grass_b", 6, 0.45)),
+    ("mushroom_a", lambda: mushroom("mushroom_a", 3)),
+    ("mushroom_b", lambda: mushroom("mushroom_b", 2)),
+    ("moss_a", lambda: moss("moss_a", 0.8)),
+    ("paper_a", lambda: paper("paper_a", 1.0, 0.65)),
+    ("paper_b", lambda: paper("paper_b", 0.7, 0.5)),
 ]

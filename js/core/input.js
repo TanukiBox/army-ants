@@ -17,7 +17,9 @@ export class DragInput {
     this.pointer = null;
     this.keys = new Set();
     el.style.touchAction = 'none';
+    this.onPoint = null;   // 攻城：指の位置そのものを使う (clientX, clientY)
     el.addEventListener('pointerdown', (e) => {
+      this.onPoint?.(e.clientX, e.clientY);
       if (this.pointer !== null) return;
       this.pointer = e.pointerId;
       this.startX = e.clientX;
@@ -26,6 +28,7 @@ export class DragInput {
     });
     el.addEventListener('pointermove', (e) => {
       if (e.pointerId !== this.pointer) return;
+      this.onPoint?.(e.clientX, e.clientY);
       this.setX(this.startTarget + (e.clientX - this.startX) * this.dotsPerCss() * 1.1);
     });
     const end = (e) => { if (e.pointerId === this.pointer) this.pointer = null; };
@@ -38,7 +41,16 @@ export class DragInput {
     window.addEventListener('blur', () => this.keys.clear());
   }
 
+  /** 左右キーの向き（-1, 0, 1） */
+  keyDir() {
+    let dir = 0;
+    if (this.keys.has('arrowleft') || this.keys.has('a')) dir -= 1;
+    if (this.keys.has('arrowright') || this.keys.has('d')) dir += 1;
+    return dir;
+  }
+
   update(dt) {
+    if (this.onPoint) return;
     let dir = 0;
     if (this.keys.has('arrowleft') || this.keys.has('a')) dir -= 1;
     if (this.keys.has('arrowright') || this.keys.has('d')) dir += 1;

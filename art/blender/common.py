@@ -16,7 +16,7 @@ from mathutils import Vector, Matrix
 ART = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ART not in sys.path:
     sys.path.insert(0, ART)
-from pipeline.palette import RAMPS, GLOWS  # noqa: E402
+from pipeline.palette import RAMPS, GLOWS, WHITE_CORE  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 見下ろしの角度と、光の向き（全部の絵で共通）
@@ -236,11 +236,16 @@ def glow_material(name, glow, core=0.975, deep=0.30, dim=False):
     m = bpy.data.materials.get(name)
     if m:
         return m
-    cols = GLOWS[glow]
+    cols = GLOWS.get(glow) or [WHITE_CORE] * 3
     m, nt, em = _new_emission_material(name)
     geo = nt.nodes.new("ShaderNodeNewGeometry")
     f = _dot(nt, geo.outputs["Normal"], VIEW)
-    stops = [(0.0, cols[2]), (0.995, cols[1])] if dim else [(0.0, cols[2]), (deep, cols[1]), (core, cols[0])]
+    if glow == "white":            # 白だけ（ゲーム側で色をつける：繭の中の光など）
+        stops = [(0.0, cols[0])]
+    elif dim:
+        stops = [(0.0, cols[2]), (0.995, cols[1])]
+    else:
+        stops = [(0.0, cols[2]), (deep, cols[1]), (core, cols[0])]
     col = _ramp(nt, f, stops)
     nt.links.new(col, em.inputs["Color"])
     return m

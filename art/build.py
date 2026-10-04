@@ -1,14 +1,16 @@
 """すべての絵を作り直すコマンド。
 
   python build.py                 … Blender でレンダリング → ドット絵化 → ゲームの素材フォルダへ
-  python build.py --only ants     … 一部だけ（ants / ground をカンマ区切り）
+  python build.py --only ants     … 一部だけ（ants / ground / props / bosses をカンマ区切り）
   python build.py --skip-render   … レンダリングを省略（減色・ドット化のやり直しだけ）
 
 できるもの（リポジトリの assets/sprites/ に入る）：
   ants/<種類>.png        アリのスプライトシート（横 = 歩行8コマ、縦 = 向き8方向）
   ants/<種類>_glow.png   同じ並びの「発光用」の画像（光る部分だけ）
-  ground/soil.png        土のタイル（すき間なく並べられる）
-  ground/decor.png       落ち葉・小石・小枝
+  ground/soil_<エリア>.png  土のタイル（すき間なく並べられる）
+  ground/decor.png       落ち葉・小石・小枝・草・キノコなど
+  props/<名前>.png       敵・繭・巣・石・水たまり（コマを並べたシート）
+  bosses/<名前>.png      ボス（コマを並べたシート）
   sprites.json           上の絵の一覧と大きさ（ゲームはこれを読む）
   checksums.txt          全画像の指紋（作り直して変化がなければ同じ画像）
 Blender で開ける見本ファイルは art/blend/ に保存されます。
@@ -23,7 +25,7 @@ import sys
 import time
 
 from pipeline.blender_path import find_blender
-from pipeline import pixelate
+from pipeline import pixelate, sheets
 from pipeline.palette import PALETTE, GLOWS
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -40,8 +42,15 @@ TILE = 256       # 土のタイルの大きさ
 DECOR_CELL = 64  # 落ち葉などのマスの大きさ
 
 WEAPONS = ["mandible", "fire", "bullet", "bomb"]
-ANT_VARIANTS = (["base"] + [f"{w}{lv}" for w in WEAPONS for lv in (1, 2, 3)]
-                + [f"armor{lv}" for lv in (1, 2, 3)])
+# 武器（なし＋4種×Lv1〜3）× 甲殻装甲（なし＋Lv1〜3）の全部の組み合わせ
+_W = [""] + [f"{w}{lv}" for w in WEAPONS for lv in (1, 2, 3)]
+ANT_VARIANTS = []
+for _a in range(4):
+    for _w in _W:
+        _n = "_".join(p for p in (_w, f"armor{_a}" if _a else "") if p) or "base"
+        ANT_VARIANTS.append(_n)
+AREAS = ["garden", "forest", "hive"]
+JOBS = ["ants", "ground", "props", "bosses"]
 
 
 def run_blender(script, args):
@@ -69,8 +78,26 @@ def decor_names():
     return re.findall(r'^\s+\("(\w+)", lambda', block, re.M)
 
 
+def render(jobs):
+    common = ["--ss", str(SS), "--ppu", str(PPU), "--blend", BLEND]
+    if "ants" in jobs:
+        run_blender("render_ants.py", ["--out", os.path.join(RENDERS, "ants"),
+                                       "--variants", ",".join(ANT_VARIANTS),
+                                       "--cell", str(ANT_CELL)] + common)
+    if "ground" in jobs:
+        run_blender("render_ground.py", ["--out", os.path.join(RENDERS, "ground"),
+                                         "--tile", str(TILE), "--cell", str(DECOR_CELL),
+                                         "--areas", ",".join(AREAS)] + common)
+    if "props" in jobs:
+        run_blender("render_props.py", ["--out", os.path.join(RENDERS, "props")] + common)
+    if "bosses" in jobs:
+        run_blender("render_bosses.py", ["--out", os.path.join(RENDERS, "bosses")] + common)
+
+
 def convert(jobs):
     made = []
+    mpath = os.path.join(OUT, "sprites.json")
+    manifest = json.load(open(mpath, encoding="utf-8")) if os.path.exists(mpath) else {}
 
     def save(img, rel):
         dst = os.path.join(OUT, rel)
@@ -86,26 +113,34 @@ def convert(jobs):
             _check_margin(col, ANT_CELL, n)
             save(col, f"ants/{n}.png")
             save(glow, f"ants/{n}_glow.png")
-            print("  ドット絵:", n, flush=True)
+        print(f"  ドット絵: アリ {len(ANT_VARIANTS)} 種類", flush=True)
+        manifest["ant"] = {"cell": ANT_CELL, "frames": 8, "dirs": 8, "anchor": [ANT_CELL // 2, ANT_CELL // 2],
+                           "dirOrder": "0=上(奥) 1=右上 2=右 3=右下 4=下 5=左下 6=左 7=左上",
+                           "variants": ANT_VARIANTS}
     if "ground" in jobs:
-        soil, _ = pixelate.pixelate(os.path.join(RENDERS, "ground", "soil.png"), SS, coverage=0.5)
-        save(soil, "ground/soil.png")
-        decor, _ = pixelate.pixelate(os.path.join(RENDERS, "ground", "decor.png"), SS,
-                                     with_outline=True, coverage=0.5)
+        soils = {}
+        for area in AREAS:
+            soil, _ = pixelate.pixelate(os.path.join(RENDERS, "ground", f"soil_{area}.png"), SS, coverage=0.5)
+            save(soil, f"ground/soil_{area}.png")
+            soils[area] = f"ground/soil_{area}.png"
+        decor, dglow = pixelate.pixelate(os.path.join(RENDERS, "ground", "decor.png"), SS,
+                                         with_outline=True, coverage=0.5, glow_split=True)
         save(decor, "ground/decor.png")
+        save(dglow, "ground/decor_glow.png")
         print("  ドット絵: 地面", flush=True)
+        manifest["soil"] = {"files": soils, "size": TILE}
+        manifest["decor"] = {"file": "ground/decor.png", "glow": "ground/decor_glow.png",
+                             "cell": DECOR_CELL, "cols": 8, "items": decor_names()}
+    for job in ("props", "bosses"):
+        if job in jobs:
+            entries, m = sheets.convert_dir(os.path.join(RENDERS, job), OUT, job, SS)
+            made += m
+            manifest[job] = entries
 
-    manifest = {
-        "note": "art/build.py が自動で書き出すファイル（手で書きかえない）",
-        "ant": {"cell": ANT_CELL, "frames": 8, "dirs": 8, "anchor": [ANT_CELL // 2, ANT_CELL // 2],
-                "dirOrder": "0=上(奥) 1=右上 2=右 3=右下 4=下 5=左下 6=左 7=左上",
-                "variants": ANT_VARIANTS},
-        "soil": {"file": "ground/soil.png", "size": TILE},
-        "decor": {"file": "ground/decor.png", "cell": DECOR_CELL, "cols": 8, "items": decor_names()},
-        "glows": {k: v[1] for k, v in GLOWS.items()},
-        "palette": PALETTE,
-    }
-    with open(os.path.join(OUT, "sprites.json"), "w", encoding="utf-8", newline="\n") as f:
+    manifest["note"] = "art/build.py が自動で書き出すファイル（手で書きかえない）"
+    manifest["glows"] = {k: v[1] for k, v in GLOWS.items()}
+    manifest["palette"] = PALETTE
+    with open(mpath, "w", encoding="utf-8", newline="\n") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
 
     # 同じ入力から同じ画像ができているか確かめるための指紋（SHA-256）
@@ -137,19 +172,11 @@ def _check_margin(img, cell, name):
 def main():
     p = argparse.ArgumentParser(description="ARMY ANTS のドット絵を作り直す")
     p.add_argument("--skip-render", action="store_true", help="Blender のレンダリングを省略する")
-    p.add_argument("--only", default="ants,ground", help="作る種類（ants / ground）")
+    p.add_argument("--only", default=",".join(JOBS), help="作る種類（ants / ground / props / bosses）")
     a = p.parse_args()
     jobs = set(a.only.split(","))
     if not a.skip_render:
-        if "ants" in jobs:
-            run_blender("render_ants.py", ["--out", os.path.join(RENDERS, "ants"),
-                                           "--variants", ",".join(ANT_VARIANTS),
-                                           "--cell", str(ANT_CELL), "--ss", str(SS), "--ppu", str(PPU),
-                                           "--blend", BLEND])
-        if "ground" in jobs:
-            run_blender("render_ground.py", ["--out", os.path.join(RENDERS, "ground"),
-                                             "--tile", str(TILE), "--cell", str(DECOR_CELL),
-                                             "--ss", str(SS), "--ppu", str(PPU), "--blend", BLEND])
+        render(jobs)
     convert(jobs)
 
 
