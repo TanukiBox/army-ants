@@ -105,7 +105,7 @@ async function boot() {
   G.edges = new Graphics();
   view.world.addChild(G.ground.layer, G.light, L.under, G.fx.under, L.mid, G.fx.over, G.edges, L.top);
   view.glow.addChild(L.groundGlow, G.swarm.glowLayer, L.glow, G.fx.glow);
-  const vignette = new Sprite(radialTexture(256, [[0, 'rgba(0,0,0,0)'], [0.55, 'rgba(0,0,0,0.05)'], [1, 'rgba(0,0,0,0.78)']]));
+  const vignette = new Sprite(radialTexture(256, [[0, 'rgba(0,0,0,0)'], [0.6, 'rgba(0,0,0,0.03)'], [1, 'rgba(0,0,0,0.5)']]));
   view.overlay.addChild(vignette);
   view.onResize = (W, H) => {
     vignette.width = W * 1.25;
@@ -179,16 +179,17 @@ function frame(realDt) {
   // 群れの下の地面を照らす光
   G.light.visible = G.phase !== 'siege' && sw.count > 0;
   G.light.tint = sw.glowColor;
-  G.light.alpha = 0.08 + Math.min(0.08, sw.ants.length / 4000);
+  G.light.alpha = 0.12 + Math.min(0.08, sw.ants.length / 4000);
   G.light.position.set(Math.round(sw.x), Math.round(sw.y));
-  G.light.width = G.light.height = sw.R * 3 + 40;
+  G.light.width = sw.rx * 2.6 + 50;
+  G.light.height = sw.ry * 2.6 + 50;
   sw.label.visible = G.phase !== 'siege' && G.phase !== 'title' && sw.count > 0;
   // 道のはしを暗く
   const e = G.edges;
   e.clear();
   const top = view.camY - view.H / 2 - 4, h = view.H + 8;
-  e.rect(-HALF - 400, top, 400, h).fill({ color: 0x000000, alpha: 0.42 });
-  e.rect(HALF, top, 400, h).fill({ color: 0x000000, alpha: 0.42 });
+  e.rect(-HALF - 400, top, 400, h).fill({ color: 0x000000, alpha: 0.32 });
+  e.rect(HALF, top, 400, h).fill({ color: 0x000000, alpha: 0.32 });
   e.rect(-HALF - 1, top, 1, h).fill({ color: 0x3a111b, alpha: 0.6 });
   e.rect(HALF, top, 1, h).fill({ color: 0x3a111b, alpha: 0.6 });
   view.render(dt);

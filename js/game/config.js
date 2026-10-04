@@ -27,6 +27,8 @@ export const CONFIG = {
     perVolleyBase: 1,       // 一度に撃つ弾の数 = base + perLog2 × log2(匹数)（最大 max）
     perVolleyLog2: 1.0,
     perVolleyMax: 8,
+    beamBase: 5,            // 弾の束の太さ（半分の幅）= beamBase + beamPerLog10 × log10(匹数)
+    beamPerLog10: 5,
     damage: 1,              // 弾1発の強さ
     damagePerLog10: 0.25,    // 群れが大きいほど弾が強い：強さ × (1 + この値 × log10(匹数 / 10))
   },
@@ -70,8 +72,9 @@ export const CONFIG = {
   // --- 敵 ---------------------------------------------------------------------
   termites: {
     countRatio: [0.25, 0.45],   // シロアリの数は、少なくとも「出てきたときの群れの数 × この範囲」
-    speed: 24,              // 群れに向かってくる速さ（地面に対して）
-    home: 0.35,             // 群れの横の位置に寄ってくる強さ
+    speed: 24,              // こちらへ進んでくる速さ（地面に対して）。群れを追いかけてはこない
+    wobble: 0.9,            // 左右にゆれる速さ
+    wobbleAmp: 10,          // 左右にゆれる幅
     clashRate: 420,         // ぶつかったとき1秒に相殺する数（大きいほど一瞬で決着）
     maxShown: 40,           // 描くシロアリの最大数
   },
@@ -79,7 +82,7 @@ export const CONFIG = {
     hpBase: 18, hpPerStage: 7,
     range: 250,             // この距離に入ると撃ってくる
     interval: 1.7,          // 撃つ間かく
-    shotSpeed: 125,
+    shotSpeed: 105,         // 弾の速さ（群れを動かしてよけられる速さ）
     kills: 0.06,            // 1発当たると群れの何割が減るか（最低 killsMin 匹）
     killsMin: 2,
     radius: 15,
@@ -107,11 +110,11 @@ export const CONFIG = {
 
   // --- ボス -------------------------------------------------------------------
   bosses: {
-    mantis: { hp: 1600, attackEvery: 2.6, reap: 0.32, sweepWarn: 0.9, stabWarn: 0.8, stabRadius: 46 },
-    spider: { hp: 2000, attackEvery: 2.4, webSlow: 0.3, webTime: 6, webRadius: 42, biteWarn: 0.8,
+    mantis: { hp: 2600, attackEvery: 2.6, reap: 0.32, sweepWarn: 0.9, stabWarn: 0.8, stabRadius: 46 },
+    spider: { hp: 2800, attackEvery: 2.4, webSlow: 0.3, webTime: 6, webRadius: 42, biteWarn: 0.8,
               biteRadius: 40, bite: 0.22 },
-    hornet: { hp: 1500, attackEvery: 2.2, diveWarn: 1.0, diveRadius: 48, dive: 0.3, lowBonus: 2.0 },
-    queen:  { hp: 2600, attackEvery: 2.0, diveWarn: 0.9, diveRadius: 62, dive: 0.32, minions: 3,
+    hornet: { hp: 2000, attackEvery: 2.2, diveWarn: 1.0, diveRadius: 48, dive: 0.3, lowBonus: 2.0 },
+    queen:  { hp: 3300, attackEvery: 2.0, diveWarn: 0.9, diveRadius: 62, dive: 0.32, minions: 3,
               minionHp: 60, stingers: 5 },
   },
 

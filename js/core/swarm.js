@@ -14,6 +14,8 @@ export const SWARM = {
   speed: 38,           // 前へ進む速さ（ドット/秒）
   follow: 6.0,         // 群れの中心が指に追いつく速さ
   stride: 2.4,         // 1コマ進む距離（ドット）
+  maxHalfWidth: 80,    // 群れの横幅の半分の上限（道の半分より細く：攻撃をよけられるように）
+  maxHalfHeight: 118,  // 群れの縦の長さの半分の上限（それより多い数は密度で表す）
 };
 
 /** 匹数 → 群れの半径（ドット） */
@@ -121,12 +123,13 @@ export class Swarm {
       list.forEach((a, k) => {
         const r = this.R * Math.pow((k + 0.5) / tot, 0.62) * (tot === 1 ? 0 : 1);
         const th = k * GOLDEN + (carpet ? 1.3 : 0);
-        a.ox = r * Math.cos(th) * 1.28 + a.jx;
-        a.oy = r * Math.sin(th) * 0.74 + a.jy;
+        const f = this.R > 0 ? r / this.R : 0;
+        a.ox = f * Math.cos(th) * this.rx + a.jx;
+        a.oy = f * Math.sin(th) * this.ry + a.jy;
         a.spr.tint = carpet ? 0x8a8282 : 0xffffff;
         // 外側・後ろのアリほど遅れてついてくる（流れるように見える）
         const rel = this.R > 0 ? r / this.R : 0;
-        a.k = SWARM.follow * (1.35 - 0.55 * rel - 0.25 * Math.max(0, a.oy / Math.max(this.R, 1))) * a.kk;
+        a.k = SWARM.follow * (1.35 - 0.55 * rel - 0.25 * Math.max(0, a.oy / Math.max(this.ry, 1))) * a.kk;
       });
     }
   }
@@ -184,6 +187,15 @@ export class Swarm {
     return out;
   }
 
+  /** 群れの横の半径（ドット）。数が多くても maxHalfWidth より太くならない */
+  get rx() { return Math.min(this.R * 1.28, SWARM.maxHalfWidth); }
+
+  /** 群れの縦の半径。横幅が上限に届いたら、その分だけ縦に長くなる（行進の列のように） */
+  get ry() {
+    const rx0 = this.R * 1.28;
+    return Math.min(this.R * 0.74 * rx0 / Math.max(1, this.rx), SWARM.maxHalfHeight);
+  }
+
   /** くっきり描いているアリの数 */
   get shown() {
     let n = 0;
@@ -203,7 +215,7 @@ export class Swarm {
     const sw = this.sweep;
     if (sw) {
       sw.t += dt;
-      sweepY = this.y - this.R - 12 + Math.min(1, sw.t / sw.dur) * (this.R * 2 + 24);
+      sweepY = this.y - this.ry - 12 + Math.min(1, sw.t / sw.dur) * (this.ry * 2 + 24);
     }
 
     for (const a of this.ants) {
@@ -275,7 +287,7 @@ export class Swarm {
     this.shownCount += (this.count - this.shownCount) * (1 - Math.exp(-dt * 8));
     if (Math.abs(this.count - this.shownCount) < 0.5) this.shownCount = this.count;
     this.label.setText(formatCount(this.shownCount));
-    this.label.position.set(Math.round(this.x), Math.round(this.y - this.R * 0.8 - 24));
+    this.label.position.set(Math.round(this.x), Math.round(this.y - this.ry * 1.08 - 24));
   }
 
   flashAnt(a, color) {

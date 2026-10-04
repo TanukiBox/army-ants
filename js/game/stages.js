@@ -66,6 +66,9 @@ function firstStage() {
   ev.push({ y, kind: 'rock', x: -110, r: CONFIG.rock.radii[1], variant: 1 });
   ev.push(row(y + 60, [{ x0: -HALF, x1: -10, ...addGate(25, E) }, { x0: -10, x1: HALF, ...addGate(-20, E) }]));
   y += g + 60;
+  ev.push({ y, kind: 'termites', x: -95, n: 14, ratio: 0.12 });
+  ev.push({ y: y + 70, kind: 'termites', x: 95, n: 14, ratio: 0.12 });
+  y += g;
   return { events: ev, length: y + CONFIG.runner.outroGap };
 }
 
@@ -143,8 +146,12 @@ function genStage(s, seed) {
   const nGates = boss ? 3 : 4 + (rng() < 0.4 ? 1 : 0);
   for (let i = 0; i < nGates; i++) segs.push('gates');
   segs.push(rng() < 0.4 ? 'cocoon2' : 'cocoon');
-  const enemies = boss ? 1 : 1 + (area >= 1 ? 1 : 0) + (rng() < 0.3 + area * 0.2 ? 1 : 0);
-  for (let i = 0; i < enemies; i++) segs.push(area === 0 && s < 2 ? 'termites' : (rng() < 0.55 ? 'termites' : 'beetle'));
+  // 敵：エリアが進むほど多い。シロアリの群れ・シロアリの波（いくつもの小さな群れ）・ゴミムシ
+  const enemies = boss ? 2 : 2 + area + (rng() < 0.4 ? 1 : 0);
+  for (let i = 0; i < enemies; i++) {
+    const r = rng();
+    segs.push(s < 1 ? 'termites' : r < 0.38 ? 'termites' : r < 0.7 ? 'wave' : 'beetle');
+  }
   if (!boss && rng() < 0.5 + area * 0.2) segs.push(s >= 2 && rng() < 0.5 ? 'puddle' : 'rocks');
   // 並べ替え（最初はゲート、繭は前半〜真ん中）
   const order = [segs.shift()];
@@ -173,6 +180,15 @@ function genStage(s, seed) {
       ev.push({ y, kind: 'termites', x: Math.round((rng() - 0.5) * 200), n, ratio: r0 + rng() * (r1 - r0) });
       // 手前にゲート：シロアリに向かって撃つか、ゲートを育てるか
       if (rng() < 0.5) ev.push(gates(y + 120));
+    } else if (kind === 'wave') {
+      // シロアリの波：小さな群れが左右にずれて並ぶ。すき間をすり抜けるか、撃って道を開ける
+      const k = 2 + Math.floor(rng() * 2) + (area >= 2 ? 1 : 0);
+      const [r0, r1] = CONFIG.termites.countRatio;
+      for (let i = 0; i < k; i++) {
+        const x = Math.round(-HALF + 50 + (HALF * 2 - 100) * ((i + 0.5) / k) + (rng() - 0.5) * 30);
+        ev.push({ y: y + i * 55 * (rng() < 0.5 ? 1 : -1) + 40, kind: 'termites', x,
+                  n: Math.max(4, Math.round(E * (0.1 + rng() * 0.1))), ratio: (r0 + rng() * (r1 - r0)) * 0.4 });
+      }
     } else if (kind === 'beetle') {
       const n = rng() < 0.3 + area * 0.2 ? 2 : 1;
       for (let k = 0; k < n; k++) {

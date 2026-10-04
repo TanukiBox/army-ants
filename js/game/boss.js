@@ -105,7 +105,7 @@ export class Boss {
   /** アギトアリの顎が届くか（ボスが群れの近くまで降りてきたとき） */
   inMelee(sw) {
     if (!this.alive) return false;
-    return this.y + 10 > sw.y - sw.R * 0.74 - CONFIG.weapons.mandible.range && Math.abs(this.x - sw.x) < sw.R + 60;
+    return this.y + 10 > sw.y - sw.ry - CONFIG.weapons.mandible.range && Math.abs(this.x - sw.x) < sw.rx + 60;
   }
 
   damage(d, poison = 0) {
@@ -150,8 +150,10 @@ export class Boss {
     if (k === 'mantis') {
       if (r < 0.55) {
         // 左右どちらかを鎌で薙ぐ（群れのいる側をねらう）
+        // 道の 45% だけを薙ぐ：残りの 55% には群れ（横幅は上限つき）が必ず入れる
         const side = sw.x < 0 ? -1 : 1;
-        const x0 = side < 0 ? -HALF : -20, x1 = side < 0 ? 20 : HALF;
+        const w = CONFIG.track.width * 0.45;
+        const x0 = side < 0 ? -HALF : HALF - w, x1 = side < 0 ? -HALF + w : HALF;
         return { type: 'sweep', warn: c.sweepWarn, x0, x1 };
       }
       return { type: 'stab', warn: c.stabWarn, x: sw.x, y: sw.y, r: c.stabRadius };
@@ -204,7 +206,7 @@ export class Boss {
     g.clear();
     const blink = 0.35 + 0.35 * Math.abs(Math.sin(A.t * 14));
     if (A.type === 'sweep') {
-      const yTop = sw.y - 70, yBot = sw.y + 50;
+      const yTop = sw.y - sw.ry - 24, yBot = sw.y + sw.ry + 16;
       if (A.phase === 'warn') {
         g.rect(A.x0, yTop, A.x1 - A.x0, yBot - yTop).fill({ color: 0xff2020, alpha: 0.08 + blink * 0.16 });
         g.rect(A.x0, yTop, A.x1 - A.x0, 1).fill({ color: 0xff3a2a, alpha: 0.9 });

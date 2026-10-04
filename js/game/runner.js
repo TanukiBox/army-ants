@@ -122,7 +122,7 @@ class GateRow {
       }
     }
     // 群れが通り過ぎたら、×÷を通過した割合で決める
-    if (sw.y + sw.R * 0.74 + 6 < this.y || (sw.ants.length === 0)) {
+    if (sw.y + sw.ry + 6 < this.y || (sw.ants.length === 0)) {
       this.done = true;
       const total = Math.max(1, this.crossed.size);
       let graze = this.applied.size > 0;
@@ -221,7 +221,7 @@ class Cocoon {
     this.iconGlow.alpha = this.light.alpha;
     // 壊せないまま群れが追いついた → 素通り
     const sw = this.f.swarm;
-    if (sw.y - sw.R * 0.74 < this.y - 4) {
+    if (sw.y < this.y + 4) {
       this.state = 'passed';
       this.f.G.popup(this.x, this.y - 30, t('passed'), 'passed');
       this.fade = 0.5;
@@ -250,6 +250,8 @@ class Termites {
     this.f = field;
     this.x = ev.x;
     this.y = y;
+    this.x0 = ev.x;
+    this.ph = Math.random() * 6.28;
     // 群れが大きいときは、シロアリもそれに合わせて多い。予想より小さい群れには少し手加減する
     const cnt = field.G.run.count, E = field.stage.expected;
     const base = Math.round(ev.n * Math.max(0.35, Math.min(1, cnt / Math.max(1, E))));
@@ -302,7 +304,8 @@ class Termites {
     const C = CONFIG.termites;
     // 群れに向かってくる
     this.y += C.speed * dt;
-    this.x += (sw.x - this.x) * (1 - Math.exp(-dt * C.home));
+    this.t = (this.t || 0) + dt;
+    this.x = this.x0 + Math.sin(this.t * C.wobble + this.ph) * C.wobbleAmp;   // ゆらゆら進むだけで、追いかけてはこない
     this.x = Math.max(-HALF + 10, Math.min(HALF - 10, this.x));
     // 毒（ヒアリ）：少しずつ減る
     if (this.poison > 0) {
@@ -331,8 +334,8 @@ class Termites {
     });
     this.label.position.set(Math.round(this.x), Math.round(this.y + R * 0.75 + 14));
     // ぶつかったら1対1で相殺
-    const dx = (this.x - sw.x) / (sw.R * 1.28 + R * 1.2 + 2);
-    const dy = (this.y - sw.y) / (sw.R * 0.74 + R * 0.75 + 4);
+    const dx = (this.x - sw.x) / (sw.rx + R * 1.2 + 2);
+    const dy = (this.y - sw.y) / (sw.ry + R * 0.75 + 4);
     if (sw.count > 0 && this.n > 0 && dx * dx + dy * dy < 1) {
       const rate = C.clashRate * (1 + Math.min(this.n, sw.count) / 150);
       this.clashAcc = (this.clashAcc || 0) + rate * dt;
@@ -410,7 +413,7 @@ class Beetle {
       this.hp -= p;
       if (this.hp <= 0) this.damage(0);
     }
-    const near = sw.y - this.y < B.range && this.y < sw.y - sw.R * 0.5;
+    const near = sw.y - this.y < B.range && this.y < sw.y - sw.ry * 0.7;
     this.cool -= dt;
     if (near && this.cool <= 0 && sw.count > 0) {
       this.cool = B.interval;
@@ -582,9 +585,10 @@ export class Field {
     const sp = CONFIG.beetle.shotSpeed;
     const s = new Sprite(this.T.glob);
     s.anchor.set(0.5);
-    s.tint = FXC.ember;
+    s.scale.set(2);         // 2倍（整数倍なのでドットはくずれない）
+    s.tint = FXC.orange;
     this.glow.addChild(s);
-    this.shots.push({ s, x, y, vx: (tx - x) / d * sp, vy: (ty - y) / d * sp, life: 4, trail: 0 });
+    this.shots.push({ s, x, y, vx: (tx - x) / d * sp, vy: (ty - y) / d * sp, life: 5, trail: 0 });
     sfx.enemyShot();
   }
 
@@ -617,13 +621,12 @@ export class Field {
     const F = CONFIG.fire;
     let n = Math.round(F.perVolleyBase + F.perVolleyLog2 * Math.log2(Math.max(1, sw.count)));
     n = Math.max(1, Math.min(F.perVolleyMax, Math.round(n * W.perMul)));
-    const ants = sw.ants.filter((a) => !a.carpet);
-    for (let i = 0; i < n && ants.length; i++) {
-      // 群れの真ん中寄りのアリから撃つ（大きな群れでも、正面の的に弾が集まるように）
-      const a1 = ants[Math.floor(Math.random() * ants.length)];
-      const a2 = ants[Math.floor(Math.random() * ants.length)];
-      const a = Math.abs(a1.x - sw.x) < Math.abs(a2.x - sw.x) ? a1 : a2;
-      this.spawnBullet(a.x, a.y - 8, W);
+    // 弾は群れの真ん中から細い束になって前へ飛ぶ（群れを動かして、撃つ的を選ぶ）。数が多いほど束が太い
+    const half = F.beamBase + F.beamPerLog10 * Math.log10(Math.max(10, sw.count));
+    const front = sw.y - sw.ry * 0.5;
+    for (let i = 0; i < n; i++) {
+      const u = (Math.random() + Math.random() - 1);   // 真ん中ほど多い
+      this.spawnBullet(sw.x + u * half, front - Math.random() * 10, W);
     }
     if (W.kind === 'sting') sfx.sting();
     else if (W.kind === 'venom') sfx.venom();
@@ -737,8 +740,8 @@ export class Field {
       const M = CONFIG.weapons.mandible;
       this.snapT -= dt;
       if (this.snapT > 0) return;
-      const front = sw.y - sw.R * 0.74;
-      const inRange = (x, y, r = 0) => y > front - M.range - r && y < sw.y + 6 && Math.abs(x - sw.x) < sw.R * 1.28 + r + 12;
+      const front = sw.y - sw.ry;
+      const inRange = (x, y, r = 0) => y > front - M.range - r && y < sw.y + 6 && Math.abs(x - sw.x) < sw.rx + r + 12;
       let any = false;
       for (const g of this.termites) {
         if (!g.dead && inRange(g.x, g.y, g.r)) {
@@ -917,7 +920,7 @@ export class Field {
       p.trail += dt;
       if (p.trail > 0.04) { p.trail = 0; this.fx.spark(this.fx.glow, p.x, p.y, { color: FXC.orange, life: 0.25, drag: 3 }); }
       p.s.position.set(Math.round(p.x), Math.round(p.y));
-      const dx = (p.x - sw.x) / (sw.R * 1.28 + 6), dy = (p.y - sw.y) / (sw.R * 0.74 + 8);
+      const dx = (p.x - sw.x) / (sw.rx + 4), dy = (p.y - sw.y) / (sw.ry + 6);
       if (sw.count > 0 && dx * dx + dy * dy < 1) {
         const B = CONFIG.beetle;
         const k = Math.max(B.killsMin, Math.round(sw.count * B.kills));
