@@ -1,0 +1,7 @@
+# 絵を作る途中のファイル（python build.py でいつでも作り直せる）
+art/build/
+__pycache__/
+*.pyc
+*.blend1
+# Claude Code の作業用の設定
+.claude/
