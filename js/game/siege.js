@@ -4,7 +4,8 @@
 // 落としたとき残っていたアリ（巣にいる分＋まだ走っている分）は次のステージへ持ち越す。
 import { Container, Sprite, Graphics } from '../../vendor/pixi.min.mjs';
 import { CONFIG } from './config.js';
-import { t } from './i18n.js';
+import { t, fmt } from './i18n.js';
+import { getSave, save } from './save.js';
 import { sfx } from './audio.js';
 import { C as FXC, textures } from '../core/fx.js';
 import { PixelText, formatCount } from '../core/pixelfont.js';
@@ -35,7 +36,7 @@ export class Siege {
     view.camX = 0;
     view.camY = this.baseY;
     const H = view.H;
-    this.moundY = this.baseY - H / 2 + 120;
+    this.moundY = this.baseY - H / 2 + 165;
     this.nestY = this.baseY + H / 2 - 92;
     this.reserve = G.run.count;
     this.start = G.run.count;
@@ -48,8 +49,8 @@ export class Siege {
     this.time = 0;
     this.emitAcc = 0;
     this.defT = 2.0;
-    this.state = 'ready';
-    this.readyT = CONFIG.siege.ready;
+    // はじめは説明を出して待つ。画面を触ったら（キーなら ← → か スペース）送り出しが始まる
+    this.state = 'intro';
     this.unitValue = Math.max(1, Math.ceil(this.reserve / (CONFIG.siege.rate * CONFIG.siege.drainSeconds)));
     this.T = textures();
     this.variant = G.swarm.variant;
@@ -70,7 +71,7 @@ export class Siege {
     this.glow.addChild(this.moundGlow);
     this.hpLabel = new PixelText(formatCount(this.hp), 2);
     this.hpLabel.tint = 0xffb08a;
-    this.hpLabel.position.set(0, Math.round(this.moundY) - 92);
+    this.hpLabel.position.set(0, Math.round(this.moundY) - 100);
     this.top.addChild(this.hpLabel);
     this.hpBar = new Graphics();
     this.top.addChild(this.hpBar);
@@ -107,13 +108,65 @@ export class Siege {
       return { ...g, y: this.moundY + 60 + g.t * (this.nestY - this.moundY - 120), x: 0, gfx, gl, label };
     });
 
-    // 指で狙う
+    // 指で狙う（最初に触ったときに送り出しが始まる）
     G.input.onPoint = (cx, cy) => {
       const p = G.toWorld(cx, cy);
       const a = Math.atan2(p.x, this.nestY - 20 - p.y);
       const m = CONFIG.siege.aimMax * Math.PI / 180;
       this.aim = Math.max(-m, Math.min(m, a));
+      if (this.state === 'intro') this.begin();
     };
+    this.buildHelp();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 説明（画面の上に文字で出す）
+  // ---------------------------------------------------------------------------
+  buildHelp() {
+    const ui = document.getElementById('siege-ui');
+    ui.innerHTML = '';
+    ui.classList.remove('hidden');
+    const mk = (cls, html) => {
+      const e = document.createElement('div');
+      e.className = cls;
+      e.innerHTML = html;
+      ui.appendChild(e);
+      return e;
+    };
+    // ずっと出しておく名前：上の数字と下の数字が何か
+    this.lblNest = mk('s-lbl nest', t('siege_lbl_nest'));
+    this.lblRes = mk('s-lbl res', t('siege_lbl_reserve'));
+    // 始まる前だけ出すもの
+    this.lblGates = this.gates.map((g) => mk('s-lbl gate intro', t('siege_lbl_gate', { m: g.m })));
+    const tips = getSave().tips || (getSave().tips = {});
+    const full = (tips.siege || 0) < 3;    // 最初の3回はくわしく
+    tips.siege = (tips.siege || 0) + 1;
+    save();
+    const rules = full
+      ? `<ol><li>${t('siege_rule1')}</li><li>${t('siege_rule2')}</li><li>${t('siege_rule3')}</li><li>${t('siege_rule4')}</li></ol>`
+      : '';
+    this.card = mk('s-card intro' + (full ? '' : ' short'),
+      `<b>${t('siege_title')}</b><div class="army">${t('siege_army', { n: fmt(this.start), hp: fmt(this.hp0) })}</div>${rules}`);
+    this.touch = mk('s-touch intro', `<div class="finger"></div><span>${t('siege_touch')}</span>`);
+    this.placeHelp();
+  }
+
+  placeHelp() {
+    const G = this.G;
+    const at = (el, x, y) => {
+      const p = G.worldToCss(x, y);
+      el.style.left = p.x + 'px';
+      el.style.top = p.y + 'px';
+    };
+    at(this.lblNest, 0, this.moundY - 88);
+    at(this.lblRes, 0, this.nestY + 44);
+    this.gates.forEach((g, i) => at(this.lblGates[i], g.x, g.y - 24));
+    at(this.touch, 0, this.nestY - 52);
+  }
+
+  begin() {
+    this.state = 'go';
+    for (const el of document.querySelectorAll('#siege-ui .intro')) el.classList.add('gone');
   }
 
   emit(dt) {
@@ -248,6 +301,7 @@ export class Siege {
     this.G.flash(0xffd420, 0.3);
     this.G.banner(t('nest_down'), 'good');
     this.hpLabel.visible = false;
+    this.lblNest.classList.add('gone');
   }
 
   fieldTotal() {
@@ -257,7 +311,7 @@ export class Siege {
   }
 
   spawnDefenders() {
-    if (!this.cfg.defenders || this.hp <= 0) return;
+    if (!this.cfg.defenders || this.hp <= 0 || this.state !== 'go') return;
     this.defT -= this.dtLast;
     if (this.defT > 0) return;
     this.defT = CONFIG.siege.defenderEvery * (0.8 + Math.random() * 0.4);
@@ -273,9 +327,8 @@ export class Siege {
       this.aim = Math.max(-m, Math.min(m, this.aim + kd * CONFIG.siege.keyAim * Math.PI / 180 * dt));
     }
     this.updateGates(dt);
-    if (this.state === 'ready') {
-      this.readyT -= dt;
-      if (this.readyT <= 0) this.state = 'go';
+    if (this.state === 'intro') {
+      if (kd || this.G.input.keys.has(' ') || this.G.input.keys.has('enter')) this.begin();
     } else if (this.state === 'go') {
       this.emit(dt);
       this.spawnDefenders();
@@ -286,7 +339,7 @@ export class Siege {
     // 表示
     this.resLabel.setText(formatCount(this.reserve));
     this.hpLabel.setText(formatCount(this.hp));
-    const w = 120, x0 = -w / 2, y = Math.round(this.moundY) - 76;
+    const w = 120, x0 = -w / 2, y = Math.round(this.moundY) - 96;
     this.hpBar.clear();
     if (this.hp > 0) {
       this.hpBar.rect(x0 - 1, y - 1, w + 2, 5).fill({ color: 0x050304 });
@@ -295,12 +348,14 @@ export class Siege {
     // 狙いの点線
     this.aimG.clear();
     if (this.state !== 'won' && this.reserve > 0) {
+      const blink = this.state === 'intro' ? 0.5 + 0.5 * Math.abs(Math.sin(this.time * 4)) : 0.55;
       for (let i = 1; i <= 9; i++) {
         const d = 18 + i * 13;
         const x = Math.round(Math.sin(this.aim) * d), yy = Math.round(this.nestY - 24 - Math.cos(this.aim) * d);
-        this.aimG.rect(x, yy, 2, 2).fill({ color: 0xff6a5a, alpha: (this.state === 'ready' ? 1 : 0.55) * (1 - i / 11) });
+        this.aimG.rect(x, yy, 2, 2).fill({ color: 0xff6a5a, alpha: blink * (1 - i / 11) });
       }
     }
+    this.placeHelp();
     // 終わり
     if (this.state === 'won') {
       this.endT -= dt;
@@ -318,6 +373,9 @@ export class Siege {
 
   destroy() {
     this.G.input.onPoint = null;
+    const ui = document.getElementById('siege-ui');
+    ui.innerHTML = '';
+    ui.classList.add('hidden');
     for (const u of this.units) this.removeUnit(u);
     for (const d of this.defenders) d.destroy();
     this.layer.destroy({ children: true });

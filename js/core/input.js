@@ -35,7 +35,7 @@ export class DragInput {
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
     window.addEventListener('keydown', (e) => {
-      if (['ArrowLeft', 'ArrowRight', 'a', 'd', 'A', 'D'].includes(e.key)) { this.keys.add(e.key.toLowerCase()); e.preventDefault(); }
+      if (['ArrowLeft', 'ArrowRight', 'a', 'd', 'A', 'D', ' ', 'Enter'].includes(e.key)) { this.keys.add(e.key.toLowerCase()); e.preventDefault(); }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());

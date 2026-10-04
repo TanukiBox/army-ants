@@ -287,7 +287,13 @@ function courseEnd(stage) {
   if (stage.boss) {
     G.phase = 'boss';
     spawnBoss(stage.bossKind);
-  } else startSiege(stage);
+  } else {
+    // コースを抜けた → 少し走ってから攻城へ（何が起きたか分かるように）
+    G.phase = 'between';
+    G.banner(t('course_clear'), 'good', t('next_siege', { n: fmt(G.run.count) }));
+    sfx.clear();
+    G.later(1.6, () => { if (G.phase === 'between' && G.field) startSiege(stage); });
+  }
 }
 
 function spawnBoss(kind) {
@@ -329,7 +335,6 @@ function startSiege(stage) {
     },
     onFail: (hp) => gameOver('siege', hp),
   });
-  G.banner(t('phase_siege'), 'siege', t('siege_help'));
 }
 
 function nextStage() {

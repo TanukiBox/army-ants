@@ -6,6 +6,7 @@ const KEY = 'armyants.save.v1';
 const DEFAULTS = () => ({
   settings: { lang: null, sound: true },
   records: { bestStage: -1, bestCount: 0 },
+  tips: { siege: 0 },   // 説明を何回見たか
 });
 
 let data = DEFAULTS();
@@ -16,7 +17,7 @@ export function loadSave() {
     if (raw) {
       const d = JSON.parse(raw);
       data = { ...DEFAULTS(), ...d, settings: { ...DEFAULTS().settings, ...d.settings },
-               records: { ...DEFAULTS().records, ...d.records } };
+               records: { ...DEFAULTS().records, ...d.records }, tips: { ...DEFAULTS().tips, ...d.tips } };
     }
   } catch (e) {
     data = DEFAULTS();

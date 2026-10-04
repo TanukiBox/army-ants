@@ -60,6 +60,28 @@
   @keyframes banner { 0% { opacity: 0; transform: scale(1.25); } 10% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
   #flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen; }
 
+  /* --- 攻城の説明 --- */
+  #siege-ui { position: absolute; inset: 0; pointer-events: none; }
+  #siege-ui .intro, #siege-ui .s-lbl { transition: opacity 0.4s; }
+  #siege-ui .gone { opacity: 0; }
+  .s-lbl { position: absolute; transform: translate(-50%, 0); font-size: 11px; font-weight: 700; color: #e0c0b0;
+    white-space: nowrap; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
+  .s-lbl.gate { transform: translate(-50%, -100%); color: #9cc8ff; font-size: 12px; text-shadow: 0 0 8px #3a8cff, 0 1px 2px #000; }
+  .s-card { position: absolute; left: 50%; top: calc(env(safe-area-inset-top) + 112px); transform: translateX(-50%); width: min(88%, 330px);
+    background: rgba(10, 6, 8, 0.88); border: 1px solid #5a1420; border-radius: 10px; padding: 12px 14px 10px;
+    font-size: 13px; line-height: 1.55; box-shadow: 0 0 18px rgba(255, 58, 42, 0.25); }
+  .s-card b { display: block; text-align: center; font-size: 18px; letter-spacing: 0.06em; text-shadow: 0 0 10px #ff3a2a; }
+  .s-card .army { text-align: center; color: var(--gold); font-weight: 700; margin: 4px 0 6px; }
+  .s-card ol { margin: 0; padding-left: 1.3em; }
+  .s-card li { margin: 3px 0; }
+  .s-card .g { color: #9cc8ff; font-weight: 700; }
+
+  .s-touch { position: absolute; transform: translate(-50%, -100%); text-align: center; font-size: 16px; font-weight: 800;
+    white-space: nowrap; text-shadow: 0 0 10px #ff3a2a, 0 1px 2px #000; animation: blink 1.2s ease-in-out infinite; }
+  .s-touch .finger { width: 26px; height: 26px; margin: 0 auto 6px; border-radius: 50%; border: 2px solid #ffb0a0;
+    box-shadow: 0 0 12px #ff3a2a; animation: tap 1.2s ease-out infinite; }
+  @keyframes tap { 0% { transform: scale(0.6); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
+
   /* --- 画面（タイトル・一時停止・設定・結果） --- */
   .screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 12px; padding: 24px; text-align: center; }
@@ -102,6 +124,7 @@
   <div id="pops"></div>
   <div id="flash"></div>
   <div id="banner"></div>
+  <div id="siege-ui" class="hidden"></div>
 
   <div id="hud" class="hidden">
     <div id="hud-row">
