@@ -10,7 +10,7 @@ import { t } from './i18n.js';
 import { sfx } from './audio.js';
 import { textures, C as FXC } from '../core/fx.js';
 import { PixelText, formatCount } from '../core/pixelfont.js';
-import { applyMutation, variantName, swarmLook, MUT_COLOR } from './mutation.js';
+import { applyMutation, previewMutation, variantName, swarmLook, MUT_COLOR } from './mutation.js';
 import { addHoney, inv } from './meta.js';
 
 const HALF = CONFIG.track.width / 2;
@@ -188,21 +188,50 @@ class Cocoon {
     this.light.position.copyFrom(this.spr.position);
     this.light.tint = MUT_COLOR[this.mut];
     field.glow.addChild(this.light);
-    // どの変異が入っているか：中にいるアリの姿
+    // どの変異が入っているか：中にいるアリの姿（2倍の大きさ）
     const vn = this.mut === 'armor' ? 'armor1' : `${this.mut}1`;
     const V = field.S.ants[vn];
     this.icon = new Sprite(V.color[4][0]);
     this.icon.anchor.set(0.5);
-    this.icon.position.set(this.x, Math.round(y) - 26);
+    this.icon.scale.set(2);
+    this.icon.position.set(this.x, Math.round(y) + CONFIG.cocoon.iconY);
     this.iconGlow = new Sprite(V.glow[4][0]);
     this.iconGlow.anchor.set(0.5);
+    this.iconGlow.scale.set(2);
     this.iconGlow.position.copyFrom(this.icon.position);
     field.top.addChild(this.icon);
     field.glow.addChild(this.iconGlow);
+    // 耐久の数字は繭の上に重ねる
     this.label = new PixelText(String(this.hp), 1);
-    this.label.position.set(this.x, Math.round(y) - 40);
+    this.label.position.set(this.x, Math.round(y) + CONFIG.cocoon.hpY);
     field.top.addChild(this.label);
+    // 名前と、割るとどうなるか（文字なので画面の上に重ねる）
+    this.el = document.createElement('div');
+    this.el.className = 'c-lbl';
+    this.el.style.setProperty('--c', '#' + MUT_COLOR[this.mut].toString(16).padStart(6, '0'));
+    document.getElementById('field-ui').appendChild(this.el);
+    this.elKey = '';
     this.t = Math.random() * 6;
+    this.place();
+  }
+
+  /** 名前の札を、繭の位置に合わせて動かす（中身は、群れの変異が変わったときだけ書きかえる） */
+  place() {
+    const run = this.f.G.run;
+    const p = previewMutation(run, this.mut);
+    const key = p.how + p.lv;
+    if (key !== this.elKey) {
+      this.elKey = key;
+      const name = t('mut_' + this.mut);
+      const role = t('mut_role_' + this.mut);
+      const what = t('cocoon_' + p.how, { n: p.lv });
+      this.el.innerHTML = `<b>${name}</b><i>${role}</i><span class="${p.how}">${what}</span>`;
+    }
+    const G = this.f.G;
+    const q = G.worldToCss(this.x, this.y + CONFIG.cocoon.labelY);
+    const m = 46;
+    this.el.style.left = Math.max(m, Math.min(G.view.cssW - m, q.x)) + 'px';
+    this.el.style.top = q.y + 'px';
   }
 
   damage(d) {
@@ -237,6 +266,7 @@ class Cocoon {
     this.t += dt;
     this.light.alpha = 0.55 + 0.45 * Math.sin(this.t * 4) ** 2;
     this.iconGlow.alpha = this.light.alpha;
+    this.place();
     // 壊せないまま群れが追いついた → 素通り
     const sw = this.f.swarm;
     if (sw.y < this.y + 4) {
@@ -248,6 +278,7 @@ class Cocoon {
 
   remove() {
     for (const s of [this.spr, this.light, this.icon, this.iconGlow, this.label]) s.destroy();
+    this.el.remove();
     this.state = 'gone';
   }
 
@@ -255,6 +286,8 @@ class Cocoon {
     if (this.state === 'passed') {
       this.fade -= dt;
       for (const s of [this.spr, this.light, this.icon, this.iconGlow, this.label]) s.alpha = Math.max(0, this.fade * 2);
+      this.el.style.opacity = String(Math.max(0, this.fade * 2));
+      this.place();
       if (this.fade <= 0) this.remove();
     } else this.update(dt);
   }
@@ -662,7 +695,8 @@ export class Field {
     if (run.mods.mutateGain > 0) this.setCount(run.count * (1 + run.mods.mutateGain), { from: { x, y } });
     sfx.mutate();
     this.G.flash(MUT_COLOR[mut], 0.25);
-    this.G.popup(x, y - 34, t('mutate', { name: t('mut_' + r.kind) + ' ' + t('lv', { n: r.lv }) }), 'mutate');
+    const name = t('mut_' + r.kind) + ' ' + t('lv', { n: r.lv });
+    this.G.popup(x, y - 34, t(r.switched ? 'mutate_switch' : 'mutate', { name }), 'mutate', t('mut_desc_' + r.kind));
     this.G.hud.refresh();
   }
 

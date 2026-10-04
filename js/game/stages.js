@@ -222,16 +222,28 @@ function genSiege(s, seed) {
   const hp = Math.max(30, nice(E * CONFIG.siege.hpRatio * (s === 0 ? 0.9 : 1)));
   const gates = [];
   const n = 2 + (area >= 1 && rng() < 0.5 ? 1 : 0) + (area >= 2 ? 1 : 0);
-  // エリア2から、赤い÷ゲート（通すと半分になる）が1つまじる
-  const bad = area >= 1 && rng() < 0.65 ? Math.floor(rng() * n) : -1;
+  // エリア2から、赤い÷ゲート（通すと半分になる）が1つまじる。
+  // ただし、いちばん手前（自分の巣の側）には置かない（目の前を÷にふさがれないように）
+  const bad = area >= 1 && rng() < 0.65 ? Math.floor(rng() * (n - 1)) : -1;
   for (let i = 0; i < n; i++) {
     gates.push({
       t: 0.22 + 0.56 * (i / (n - 1)),                      // 縦の位置（0 = 敵の巣、1 = 自分の巣）
-      w: (s === 0 ? 90 : 64) + Math.round(rng() * 30),
+      w: i === bad ? CONFIG.siege.badWidth : (s === 0 ? 90 : 64) + Math.round(rng() * 30),
       m: i === bad ? -2 : (rng() < 0.25 + area * 0.15 ? 3 : 2),
       speed: (s === 0 ? 0.55 : 0.7) + rng() * 0.5 + area * 0.12,   // 左右に動く速さ
       phase: rng() * Math.PI * 2,
     });
+  }
+  if (bad >= 0) {
+    // ÷ゲートのすぐ手前とすぐ奥の×ゲートは同じ動き（×を2つ通す道）、÷ゲートはその鏡うつし（いつも反対側にいる）
+    const front = gates[bad + 1];
+    for (const k of [bad - 1, bad + 1]) {
+      if (k < 0 || k >= n) continue;
+      gates[k].speed = front.speed;
+      gates[k].phase = front.phase;
+    }
+    gates[bad].speed = front.speed;
+    gates[bad].phase = front.phase + Math.PI;
   }
   // 道をふさぐ石（真ん中にひとつ置いて、まっすぐ撃つだけでは届かないように）
   const rocks = [];

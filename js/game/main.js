@@ -60,9 +60,9 @@ G.toWorld = (cx, cy) => {
   const r = G.app.canvas.getBoundingClientRect();
   return { x: (cx - r.left) / r.width * v.W - v.W / 2 + v.camX, y: (cy - r.top) / r.height * v.H - v.H / 2 + v.camY };
 };
-G.popup = (x, y, text, kind) => {
+G.popup = (x, y, text, kind, sub) => {
   const p = G.worldToCss(x, y);
-  G.hud.popup(p.x, p.y, text, kind);
+  G.hud.popup(p.x, p.y, text, kind, sub);
 };
 G.popupNum = (x, y, text, tint) => {
   const n = new PixelText(text, 2);

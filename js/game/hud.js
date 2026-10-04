@@ -58,14 +58,19 @@ export class Hud {
   }
 
   /** 世界の位置（ドット）に、ふわっと上がる文字 */
-  popup(screenX, screenY, text, kind) {
+  popup(screenX, screenY, text, kind, sub) {
     const el = document.createElement('div');
     el.className = 'pop ' + (kind || '');
     el.textContent = text;
+    if (sub) {
+      const s = document.createElement('small');
+      s.textContent = sub;
+      el.appendChild(s);
+    }
     el.style.left = screenX + 'px';
     el.style.top = screenY + 'px';
     this.popLayer.appendChild(el);
-    setTimeout(() => el.remove(), 1300);
+    setTimeout(() => el.remove(), kind === 'mutate' ? 2300 : 1300);
   }
 
   flash(color, strength = 0.3) {

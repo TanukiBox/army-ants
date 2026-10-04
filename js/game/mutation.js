@@ -1,5 +1,5 @@
 // 変異：武器枠は1つ（アギトアリ／ヒアリ／サシハリアリ／自爆アリ）、防具枠は1つ（甲殻装甲）。
-// 同じ種類を取ると Lv+1（最大3）、別の種類を取ると持ち替えて Lv1 から。
+// 同じ種類を取ると Lv+1（最大3）、別の種類を取ると持ち替える（Lv はそのまま引きつぐ。歩夢の確認で変更）。
 
 export const MUT_COLOR = {
   mandible: 0xff8a24, fire: 0x5cff3a, bullet: 0xb85cff, bomb: 0xffd420, armor: 0x36dcff,
@@ -18,8 +18,20 @@ export function applyMutation(run, mut) {
     return { kind: mut, lv: run.weapon.lv, switched: false };
   }
   const switched = !!run.weapon;
-  run.weapon = { type: mut, lv: 1 };
-  return { kind: mut, lv: 1, switched };
+  run.weapon = { type: mut, lv: switched ? run.weapon.lv : 1 };
+  return { kind: mut, lv: run.weapon.lv, switched };
+}
+
+/** この繭を割ったらどうなるか（割る前に見せる）。how: 'new'（はじめて）/ 'up'（Lv+1）/ 'switch'（持ち替え）/ 'max'（もう最大） */
+export function previewMutation(run, mut) {
+  if (mut === 'armor') {
+    const lv = run.armor || 0;
+    return lv >= 3 ? { lv: 3, how: 'max' } : { lv: lv + 1, how: lv ? 'up' : 'new' };
+  }
+  const w = run.weapon;
+  if (!w) return { lv: 1, how: 'new' };
+  if (w.type === mut) return w.lv >= 3 ? { lv: 3, how: 'max' } : { lv: w.lv + 1, how: 'up' };
+  return { lv: w.lv, how: 'switch' };
 }
 
 /** いまの変異の組み合わせ → アリの絵の名前（例：fire2_armor1） */

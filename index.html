@@ -47,7 +47,17 @@
   .pop { position: absolute; transform: translate(-50%, -50%); font-weight: 800; font-size: 15px; white-space: nowrap;
     animation: pop 1.25s ease-out forwards; text-shadow: 0 0 8px currentColor, 0 1px 2px #000; }
   .pop.graze { color: var(--gold); font-size: 17px; }
-  .pop.mutate { color: #fff; font-size: 16px; }
+  .pop.mutate { color: #fff; font-size: 16px; text-align: center; animation-duration: 2.2s; }
+  .pop small { display: block; margin-top: 2px; font-size: 12px; font-weight: 700; color: #ffe0c8; }
+  #field-ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .c-lbl { position: absolute; transform: translate(-50%, -100%); text-align: center; white-space: nowrap; line-height: 1.2;
+    color: var(--c); text-shadow: 0 0 6px var(--c), 0 1px 2px #000, 0 0 3px #000; }
+  .c-lbl b { display: block; font-size: 13px; font-weight: 900; }
+  .c-lbl i { display: block; font-style: normal; font-size: 10px; font-weight: 700; color: #f0e4dc; text-shadow: 0 1px 2px #000, 0 0 3px #000; }
+  .c-lbl span { display: inline-block; margin-top: 2px; padding: 0 6px; border-radius: 7px; font-size: 11px; font-weight: 800;
+    color: #fff; text-shadow: none; background: rgba(0, 0, 0, 0.6); border: 1px solid var(--c); }
+  .c-lbl span.up { background: #b8860b; border-color: #ffd420; }
+  .c-lbl span.max { color: #a8a8b4; border-color: #555; }
   .pop.passed { color: #8c8c9a; }
   @keyframes pop { 0% { opacity: 0; margin-top: 6px; } 12% { opacity: 1; margin-top: 0; } 75% { opacity: 1; } 100% { opacity: 0; margin-top: -26px; } }
   #banner { position: absolute; left: 0; right: 0; top: 30%; text-align: center; pointer-events: none; opacity: 0; }
@@ -159,6 +169,7 @@
   <div id="pops"></div>
   <div id="flash"></div>
   <div id="banner"></div>
+  <div id="field-ui"></div>
   <div id="siege-ui" class="hidden"></div>
 
   <div id="hud" class="hidden">
