@@ -64,11 +64,23 @@ export function textures() {
   });
   // 蟻酸のしずく（上が先頭の短い筋）
   TEX.streak = pixTex(2, 9, (x, y) => (y < 3 ? 1 : 1 - (y - 2) / 8));
-  // 毒弾（緑の玉）
-  TEX.glob = pixTex(5, 5, (x, y) => {
-    const d = Math.hypot(x - 2, y - 2);
-    return d <= 2.3 ? (d < 1.1 ? 1 : 0.85) : 0;
+  // 毒弾（緑の玉）。Lv が上がると大きくなる
+  const globTex = (s) => pixTex(s, s, (x, y) => {
+    const c = (s - 1) / 2, d = Math.hypot(x - c, y - c);
+    return d <= c + 0.3 ? (d < c * 0.45 ? 1 : 0.85) : 0;
   });
+  TEX.glob = globTex(5);
+  TEX.glob7 = globTex(7);
+  TEX.glob9 = globTex(9);
+  // 毒針（Lv が上がると太く長く）
+  const lanceTex = (w, h) => pixTex(w, h, (x, y) => {
+    const c = (w - 1) / 2, dx = Math.abs(x - c);
+    const head = y < h * 0.2;
+    if (dx < 0.6) return head ? 1 : 1 - (y - h * 0.2) / (h * 0.85);
+    return dx <= c * (head ? 1 : 0.6) ? (head ? 0.8 : 0.4 * (1 - y / h)) : 0;
+  });
+  TEX.lance5 = lanceTex(5, 20);
+  TEX.lance7 = lanceTex(7, 26);
   return TEX;
 }
 

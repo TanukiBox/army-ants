@@ -35,6 +35,8 @@
   #hud-kills span { display: block; font-size: 22px; font-weight: 900; color: #fff2d0; text-shadow: 0 0 8px #ff8a24, 0 1px 2px #000; }
   #hud-kills small { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; color: var(--dim); }
   #hud-kills.bump span { animation: killBump 0.12s ease-out; }
+  #hud-kills em { display: block; margin-top: 6px; font-style: normal; font-size: 13px; font-weight: 800; color: var(--gold); text-shadow: 0 0 8px rgba(255, 196, 40, 0.6), 0 1px 2px #000; }
+  #hud-kills em.bump { animation: killBump 0.15s ease-out; }
   @keyframes killBump { from { transform: scale(1.25); } to { transform: scale(1); } }
   #hud-kills + #btn-pause { margin-left: 8px; }
   #hud-stage { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; color: var(--text); }
@@ -54,6 +56,8 @@
     animation: pop 1.25s ease-out forwards; text-shadow: 0 0 8px currentColor, 0 1px 2px #000; }
   .pop.graze { color: var(--gold); font-size: 17px; }
   .pop.mutate { color: #fff; font-size: 16px; text-align: center; animation-duration: 2.2s; }
+  .pop.mutate.up { color: var(--gold); font-size: 22px; text-shadow: 0 0 12px #ffb000, 0 2px 3px #000; }
+  .pop.combo { color: #ffb060; font-size: 20px; font-weight: 900; text-shadow: 0 0 12px #ff6a00, 0 2px 3px #000; animation-duration: 1.4s; }
   .pop small { display: block; margin-top: 2px; font-size: 12px; font-weight: 700; color: #ffe0c8; }
   #field-ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .hint { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; font-size: 12px; font-weight: 800; color: #fff;
@@ -141,6 +145,12 @@
   #title-honey, .honey { font-size: 14px; font-weight: 700; color: var(--gold); text-shadow: 0 0 8px rgba(255, 200, 80, 0.4); }
   #title-daily { font-size: 12px; color: var(--dim); }
   .note { font-size: 12px; color: var(--dim); max-width: 330px; line-height: 1.5; }
+  #card-tally { width: min(92%, 340px); margin-bottom: 14px; text-align: center; }
+  #card-tally .t-head { font-size: 20px; font-weight: 900; letter-spacing: 0.06em; text-shadow: 0 0 12px #ff3a2a; }
+  #card-tally .t-stars { font-size: 26px; color: var(--gold); letter-spacing: 0.1em; text-shadow: 0 0 10px #ffb000; margin: 2px 0 6px; }
+  #card-tally .t-row { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 6px; border-bottom: 1px solid #2a1418; }
+  #card-tally .t-row b { font-size: 16px; }
+  #card-tally .t-row.honey b { color: var(--gold); font-size: 20px; text-shadow: 0 0 8px rgba(255, 196, 40, 0.6); }
   #card-list { display: flex; flex-direction: column; gap: 10px; width: min(92%, 340px); }
   .card { text-align: left; padding: 10px 12px 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: #140a0d;
     color: var(--text); font: inherit; border-left: 4px solid #888; box-shadow: 0 0 12px rgba(0,0,0,0.6); }
@@ -151,6 +161,7 @@
   .card .c-desc { font-size: 13px; color: #d8c8bc; }
   .card.cat-gate { border-left-color: #3a8cff; } .card.cat-fire { border-left-color: #ff8a24; }
   .card.cat-cocoon { border-left-color: #d0d0e0; } .card.cat-weapon { border-left-color: #b85cff; }
+  .card.cat-swarm { border-left-color: #b8ffb0; }
   .card.cat-guard { border-left-color: #36dcff; } .card.cat-siege { border-left-color: #ff3a2a; } .card.cat-meta { border-left-color: #ffd420; }
   #queen-list { width: min(92%, 360px); max-height: 62vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
     scrollbar-color: #5a1420 #0c0608; scrollbar-width: thin; }
@@ -188,7 +199,7 @@
         <div id="hud-stage"></div>
         <div id="hud-slots"><div id="hud-weapon"></div><div id="hud-armor"></div></div>
       </div>
-      <div id="hud-kills" class="hidden"><span id="hud-kills-n">0</span><small id="hud-kills-l"></small></div>
+      <div id="hud-kills" class="hidden"><span id="hud-kills-n">0</span><small id="hud-kills-l"></small><em id="hud-honey"></em></div>
       <button id="btn-pause" aria-label="pause">❚❚</button>
     </div>
   </div>
@@ -247,6 +258,7 @@
   </div>
 
   <div id="cards" class="screen dim hidden">
+    <div id="card-tally"></div>
     <div class="heading" data-t="choose_card"></div>
     <div id="card-sub" class="note"></div>
     <div id="card-list"></div>

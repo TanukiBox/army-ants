@@ -3,14 +3,16 @@ import { CONFIG } from './config.js';
 import { getSave, save } from './save.js';
 import { CARDS, defaultMods, buildMods } from './cards.js';
 
-export const UPGRADE_KEYS = ['startCount', 'damage', 'cocoon', 'gateCap', 'choices'];
+export const UPGRADE_KEYS = ['startCount', 'damage', 'cocoon', 'range', 'choices'];
 
 export function meta() {
   const d = getSave();
   d.meta = d.meta || {};
   const m = d.meta;
   m.honey ??= 0;
-  m.upgrades = { startCount: 0, damage: 0, cocoon: 0, choices: 0, gateCap: 0, ...(m.upgrades || {}) };
+  m.upgrades = { startCount: 0, damage: 0, cocoon: 0, choices: 0, range: 0, ...(m.upgrades || {}) };
+  // 作り直し前の「ゲートの上限」に払った蜜は、「弾が届く距離」に移す
+  if (m.upgrades.gateCap) { m.upgrades.range = Math.max(m.upgrades.range, m.upgrades.gateCap); delete m.upgrades.gateCap; }
   m.cards ??= [];          // 解放したカード
   m.clears ??= 0;
   m.invasionMax ??= 0;     // 選べる侵攻度の最大（クリアするたびに1段ずつ増える）
@@ -97,8 +99,7 @@ export function runSetup(mode) {
   const base = defaultMods();
   base.dmgMul *= 1 + U.damage.per * m.upgrades.damage;
   base.cocoonDmg *= 1 + U.cocoon.per * m.upgrades.cocoon;
-  base.gateCapMul += U.gateCap.per * m.upgrades.gateCap;
-  base.gateCapSteps += m.upgrades.gateCap;
+  base.rangeMul *= 1 + U.range.per * m.upgrades.range;
   return {
     mode, seed: 'run:' + Date.now(), date: null,
     invasion: Math.min(m.invasion, m.invasionMax),

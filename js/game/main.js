@@ -291,7 +291,7 @@ function startStage(i) {
   const run = G.run;
   run.stageIndex = i;
   run.shortBy = 0;
-  run.count = run.startCount;   // 毎ステージ少ない群れから始める（持ち越すのは変異とカード）
+  run.count = run.startCount + (run.mods.startPlus || 0);   // 毎ステージ少ない群れから始める（持ち越すのは変異とカード）
   const stage = run.stages[i];
   G.ground.setArea(stage.areaName);
   const sw = G.swarm;
@@ -302,7 +302,8 @@ function startStage(i) {
   G.view.camX = 0;
   G.view.camY = sw.y - (CONFIG.lane.swarmScreenY - 0.5) * G.view.H;
   G.field = new Lane(G, stage, {
-    onClear: () => {
+    onClear: (info) => {
+      G.lastClear = info;
       G.phase = 'between';
       G.later(CONFIG.lane.clearDelay, () => stageCleared());
     },
@@ -332,7 +333,9 @@ function showCards() {
   G.phase = 'cards';
   // 今日のコースは日付で決まるので、全員が同じ候補になる
   const rng = rngFor(run.seed + ':cards:' + run.stageIndex);
-  const ids = drawCards(rng, run.pool, run.cards, run.choices);
+  // 武器のカードは、いまの武器のものだけ（今日のコースは全員同じ候補にするため絞らない）
+  const ids = drawCards(rng, run.pool, run.cards, run.choices, run.mode === 'daily' ? undefined : (run.weapon?.type ?? null));
+  fillTally(run);
   const list = $('card-list');
   list.innerHTML = '';
   for (const id of ids) {
@@ -350,9 +353,31 @@ function showCards() {
     });
     list.appendChild(b);
   }
-  $('card-sub').textContent = t('next_stage_label', { where: whereLabel(run.stageIndex + 1), n: fmt(run.count) });
+  $('card-sub').textContent = t('next_stage_label', { where: whereLabel(run.stageIndex + 1), n: fmt(run.startCount + (run.mods.startPlus || 0)) });
   $('card-owned').textContent = ownedText(run);
   showScreen('cards');
+}
+
+/** ステージクリアの集計（★・撃破・残った群れ・このステージの蜜）。数字は勢いよく数え上がる */
+function fillTally(run) {
+  const c = G.lastClear;
+  const el = $('card-tally');
+  if (!c) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="t-head">${t('tally_clear', { where: stageLabel(run.stageIndex) })}</div>`
+    + `<div class="t-stars">${'★'.repeat(c.stars)}${'☆'.repeat(3 - c.stars)}${c.flawless ? ' ' + t('flawless') : ''}</div>`
+    + `<div class="t-row"><span>${t('tally_kills')}</span><b data-n="${c.kills}">0</b></div>`
+    + `<div class="t-row"><span>${t('tally_left')}</span><b data-n="${c.left}">0</b></div>`
+    + `<div class="t-row honey"><span>${t('tally_honey')}</span><b data-n="${Math.round(c.honey)}" data-pre="+">0</b></div>`;
+  const items = [...el.querySelectorAll('b[data-n]')];
+  const t0 = performance.now(), dur = 900;
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / dur), e = 1 - (1 - p) ** 3;
+    for (const b of items) b.textContent = (b.dataset.pre || '') + fmt(Math.round(Number(b.dataset.n) * e));
+    if (p < 1) { if (Math.random() < 0.5) sfx.honey(); requestAnimationFrame(step); }
+  };
+  requestAnimationFrame(step);
+  // 画面が裏にあって動きが止まっていても、最後の数は必ず出す
+  setTimeout(() => { for (const b of items) b.textContent = (b.dataset.pre || '') + fmt(Number(b.dataset.n)); }, dur + 200);
 }
 
 function ownedText(run) {

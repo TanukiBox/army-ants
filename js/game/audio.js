@@ -137,6 +137,14 @@ export const sfx = {
   ui() { if (ok('ui', 0.04)) tone(1200, 0.04, { type: 'triangle', vol: 0.05 }); },
   /** シロアリが弾けた（高さを少しずつ変える） */
   pop() { if (ok('pop', 0.035)) noise(0.05, { vol: 0.08, freq: 1300 + Math.random() * 1800, type: 'bandpass', q: 4 }); },
+  /** 続けて倒した数が節目に届いた（level が上がるほど高く） */
+  combo(level) {
+    if (!ok('combo', 0.15)) return;
+    const b = 440 * 2 ** (Math.min(level, 8) / 6);
+    [0, 4, 7, 12].forEach((s, i) => tone(b * 2 ** (s / 12), 0.12, { type: 'square', vol: 0.08, delay: i * 0.05 }));
+  },
+  /** 蜜が入った */
+  honey() { if (ok('honey', 0.045)) tone(1500 + Math.random() * 500, 0.04, { type: 'sine', vol: 0.05, to: 2400 }); },
   /** 卵が割れて仲間が生まれた */
   hatch() {
     if (!ok('hatch', 0.1)) return;

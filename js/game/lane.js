@@ -121,7 +121,7 @@ class Egg {
     this.x = ev.x;
     this.y = y;
     this.hp = this.hp0 = ev.hp;
-    this.reward = ev.n;
+    this.reward = Math.max(1, Math.round(ev.n * lane.G.run.mods.eggMul));   // 産卵の法則で増える
     this.r = CONFIG.egg.radius;
     this.state = 'alive';
     this.g = new Graphics();
@@ -332,7 +332,26 @@ class Cocoon {
     this.f.G.hitstop();
     this.f.G.view.shake(2.5);
     sfx.cocoonBreak();
-    addHoney(this.f.G.run, CONFIG.honey.cocoon);
+    this.f.honey(CONFIG.honey.cocoon, this.x, this.y - 10);
+    // 中のアリが光りながら群れへ飛び込む
+    const lane = this.f, sw = lane.swarm, mcol = MUT_COLOR[this.mut];
+    const fly = new Sprite(this.icon.texture);
+    fly.anchor.set(0.5);
+    fly.scale.set(2);
+    fly.position.copyFrom(this.icon.position);
+    lane.top.addChild(fly);
+    const x0 = fly.x, y0 = fly.y;
+    let tt = 0;
+    lane.fx.anims.push({ update: (dt) => {
+      tt += dt;
+      const p = Math.min(1, tt / 0.32), e = p * p;
+      fly.position.set(Math.round(x0 + (sw.x - x0) * e), Math.round(y0 + (sw.y - y0) * e - Math.sin(p * Math.PI) * 26));
+      if (p < 1) return true;
+      fly.destroy();
+      lane.fx.ring(lane.fx.glow, sw.x, sw.y, 4, 34, 0.45, mcol, 1);
+      lane.fx.burst(lane.fx.glow, sw.x, sw.y, 20, { color: [mcol, 0xffffff], speed: [40, 120], life: [0.2, 0.5], drag: 4, size: 2 });
+      return false;
+    } });
     this.f.mutate(this.mut, this.x, this.y);
     this.remove();
   }
@@ -516,7 +535,7 @@ class Beetle {
 
   die() {
     this.hp = 0;
-    addHoney(this.lane.G.run, CONFIG.honey.beetle);
+    this.lane.honey(CONFIG.honey.beetle, this.x, this.y);
     const fx = this.lane.fx;
     fx.burst(fx.glow, this.x, this.y, 18, { color: [FXC.ember, FXC.orange, 0xffffff], speed: [30, 100], life: [0.2, 0.5], drag: 5, size: 2 });
     fx.burst(fx.over, this.x, this.y, 14, { color: [0x36220c, 0x0f090b, 0x553410], speed: [30, 90], life: [0.3, 0.7], drag: 4, size: 2 });
@@ -695,7 +714,12 @@ export class Lane {
     G.layers.top.addChild(this.top);
     G.layers.glow.addChild(this.glow);
     this.T = textures();
-    this.events = stage.course.events.map((e) => ({ ...e })).sort((a, b) => a.y - b.y);
+    this.events = stage.course.events.map((e) => ({ ...e }));
+    if (G.run.mods.goldEvery && !this.events.some((e) => e.kind === 'gold')) {
+      const gy = Math.round(stage.course.length * 0.55), gx = (Math.random() < 0.5 ? -1 : 1) * 60;
+      this.events.push({ y: gy, kind: 'gold', x: gx }, { y: gy + 100, kind: 'horde', x: gx, n: 18, w: 40 });
+    }
+    this.events.sort((a, b) => a.y - b.y);
     this.next = 0;
     this.startY = this.swarm.y;
     this.length = stage.course.length;
@@ -708,7 +732,7 @@ export class Lane {
     this.rocks = [];
     this.puddles = [];
     this.bullets = [];
-    this.bulletPool = { acid: [], venom: [], sting: [] };   // 弾の絵を使い回す（作っては捨てるとスマホで引っかかる）
+    this.bulletPool = {};   // 弾の絵を使い回す（作っては捨てるとスマホで引っかかる）。絵の種類ごと
     this.kamikaze = [];
     this.nest = null;
     this.state = 'run';    // run / done
@@ -720,6 +744,14 @@ export class Lane {
     this.drownAcc = 0;
     this.kills = 0;
     this.stats = { gain: {}, loss: {} };   // 何でどれだけ増えた・減ったか（調整用）
+    this.drops = [];         // 蜜のしずく（右上の数へ飛んでいく）
+    this.dropPool = [];
+    this.honeyPending = 0;   // 飛んでいる途中の蜜（届いてから右上の数を増やす）
+    this.stageHoney = 0;     // このステージで集めた蜜
+    this.combo = 0;          // 続けて倒した数
+    this.lastKillT = -9;
+    this.predAcc = 0;
+    this.burstT = 0;         // 変異した直後の試し撃ち
     this.grid = Array.from({ length: NB }, () => []);
     this.aimList = [];
     this.screenY = CONFIG.lane.swarmScreenY;
@@ -788,7 +820,7 @@ export class Lane {
     const add = Math.max(0, Math.min(k, CONFIG.lane.maxCount - run.count));
     this.stats.gain[why] = (this.stats.gain[why] || 0) + add;
     if (add > 0) this.setCount(run.count + add, { from: at });
-    if (k > add) addHoney(run, (k - add) * CONFIG.lane.overflowHoney);
+    if (k > add) this.honey((k - add) * CONFIG.lane.overflowHoney, at?.x ?? this.swarm.x, at?.y ?? this.swarm.y);
     return add;
   }
 
@@ -827,7 +859,7 @@ export class Lane {
       this.G.popupNum(p.x, p.y - 14, '+' + formatCount(got), GOOD.text);
       sfx.gateGood();
     } else if (p.v < 0) {
-      const lost = this.loseAnts(-p.v, { at: { x: sw.x, y: sw.y - sw.ry }, why: 'board' });
+      const lost = this.loseAnts(Math.max(1, Math.round(-p.v * run.mods.dmgTaken)), { at: { x: sw.x, y: sw.y - sw.ry }, why: 'board' });
       this.G.popupNum(p.x, p.y - 14, '-' + formatCount(lost), BAD.text);
       sfx.gateBad();
       this.G.flash(0xff3a2a, 0.18);
@@ -843,7 +875,9 @@ export class Lane {
     sfx.mutate();
     this.G.flash(MUT_COLOR[mut], 0.25);
     const name = t('mut_' + r.kind) + ' ' + t('lv', { n: r.lv });
-    this.G.popup(x, y - 34, t(r.switched ? 'mutate_switch' : 'mutate', { name }), 'mutate', t('mut_desc_' + r.kind));
+    const up = r.lv > 1 && !r.switched;
+    this.G.popup(x, y - 34, up ? `${t('lvup')} ${name}` : t(r.switched ? 'mutate_switch' : 'mutate', { name }), up ? 'mutate up' : 'mutate', t('mut_desc_' + r.kind));
+    this.burstT = CONFIG.shot.burstTime;   // 新しい力をすぐに試し撃ち
     this.G.hud.refresh();
   }
 
@@ -899,8 +933,23 @@ export class Lane {
       h.shot++;
       this.kills++;
       this.G.run.kills = (this.G.run.kills || 0) + 1;
-      if (this.kills % CONFIG.horde.killsPerHoney === 0) addHoney(this.G.run, 1);
+      if (this.kills % CONFIG.horde.killsPerHoney === 0) this.honey(1, u.x, u.y, 1);
       sfx.pop();
+      // 続けて倒すと、節目でほめる
+      this.combo = this.time - this.lastKillT < CONFIG.horde.comboGap ? this.combo + 1 : 1;
+      this.lastKillT = this.time;
+      const ci = CONFIG.horde.combo.indexOf(this.combo);
+      if (ci >= 0) this.praiseCombo(ci);
+      // 捕食の法則：倒したシロアリの場所から仲間が増える
+      const pr = this.G.run.mods.predation;
+      if (pr > 0) {
+        this.predAcc += pr;
+        if (this.predAcc >= 1) {
+          const k = Math.floor(this.predAcc);
+          this.predAcc -= k;
+          this.gain(k, { x: u.x, y: u.y }, 'devour');
+        }
+      }
     }
     // 倒れた姿をその場に少し残す（絵は大群ごと片づけるときに消す。1匹ずつ消すと重くなる）
     u.corpse = CONFIG.horde.corpse;
@@ -916,6 +965,75 @@ export class Lane {
       this.G.view.shake(CONFIG.feel.shakeSmall);
       fx.ring(fx.glow, u.x, u.y, 4, 30, 0.4, 0xffffff, 0.7);
     }
+  }
+
+  praiseCombo(i) {
+    const sw = this.swarm, G = this.G;
+    G.popup(sw.x, sw.y - sw.ry - 46, t('combo', { n: this.combo }), 'combo');
+    sfx.combo(i);
+    if (i >= 2) G.view.shake(CONFIG.feel.shakeSmall);
+    if (i >= 1) this.honey(i, sw.x, sw.y - sw.ry - 30);
+  }
+
+  /** 蜜を足す（しずくが右上の数へ飛んでいき、届いたら数が増える） */
+  honey(amount, x, y, drops) {
+    if (amount <= 0) return;
+    const run = this.G.run, before = run.honey || 0;
+    addHoney(run, amount);
+    const got = (run.honey || 0) - before;
+    this.stageHoney += got;
+    const n = drops ?? Math.min(12, Math.max(1, Math.round(amount)));
+    this.honeyPending += got;
+    for (let i = 0; i < n; i++) this.spawnDrop(x, y, got / n);
+  }
+
+  spawnDrop(x, y, v) {
+    let s = this.dropPool.pop();
+    if (!s) {
+      s = new Sprite(this.T.disc[2]);
+      s.anchor.set(0.5);
+      s.tint = 0xffc830;
+      this.glow.addChild(s);
+    }
+    s.alpha = 1;
+    const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 80;
+    this.drops.push({ s, x, y, v, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50, t: 0 });
+  }
+
+  updateDrops(dt) {
+    const run = this.G.run;
+    if (this.drops.length) {
+      const view = this.G.view;
+      const tx = view.camX + view.W / 2 - 24, ty = view.camY - view.H / 2 + 40;   // 右上の蜜の数
+      const keep = [];
+      for (const d of this.drops) {
+        d.t += dt;
+        if (d.t < 0.25) {
+          const k = Math.exp(-dt * 4);
+          d.vx *= k;
+          d.vy *= k;
+        } else {
+          const dx = tx - d.x, dy = ty - d.y, dist = Math.hypot(dx, dy) || 1;
+          if (dist < 12) {
+            d.s.alpha = 0;
+            this.dropPool.push(d.s);
+            this.honeyPending -= d.v;
+            sfx.honey();
+            continue;
+          }
+          const sp = 260 + d.t * 700;
+          d.vx += ((dx / dist) * sp - d.vx) * Math.min(1, dt * 8);
+          d.vy += ((dy / dist) * sp - d.vy) * Math.min(1, dt * 8);
+        }
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+        d.s.position.set(Math.round(d.x), Math.round(d.y));
+        keep.push(d);
+      }
+      this.drops = keep;
+    }
+    if (!this.drops.length) this.honeyPending = 0;
+    this.G.hud.honey(Math.floor((run.honey || 0) - this.honeyPending + 1e-6));
   }
 
   poisonUnit(u, time) {
@@ -934,7 +1052,7 @@ export class Lane {
       if (!o.poisoned && Math.hypot(o.x - u.x, o.y - u.y) < R) near.push(o);
     });
     near.sort((p, q) => Math.hypot(p.x - u.x, p.y - u.y) - Math.hypot(q.x - u.x, q.y - u.y));
-    for (const o of near.slice(0, A.spread[lv - 1])) {
+    for (const o of near.slice(0, A.spread[lv - 1] + this.G.run.mods.poisonSpread)) {
       if (Math.random() < A.spreadChance) this.poisonUnit(o, A.poisonTime * (0.7 + Math.random() * 0.6));
     }
   }
@@ -971,7 +1089,10 @@ export class Lane {
   weaponInfo() {
     const run = this.G.run, w = run.weapon, m = run.mods, A = CONFIG.arms;
     let rate = CONFIG.shot.perAnt, dmg = CONFIG.shot.damage, kind = 'acid', pierce = 0;
-    if (w?.type === 'fire') kind = 'venom';
+    if (w?.type === 'fire') {
+      kind = 'venom';
+      dmg *= A.fire.dmgMul[w.lv - 1];
+    }
     if (w?.type === 'bullet') {
       kind = 'sting';
       rate *= A.bullet.rateMul;
@@ -980,6 +1101,7 @@ export class Lane {
     }
     if (w?.type === 'bomb') rate *= A.bomb.rateMul;
     if (w?.type === 'mandible') rate *= A.mandible.rateMul;
+    if (this.burstT > 0) rate *= CONFIG.shot.burstMul;
     return { rate: rate / m.fireRate, dmg: dmg * m.dmgMul, kind, lv: w?.lv ?? 0, pierce };
   }
 
@@ -1005,19 +1127,27 @@ export class Lane {
     else sfx.shoot();
   }
 
+  /** 弾の絵（Lv が上がるほど大きく派手に） */
+  bulletKey(W) {
+    const i = Math.max(0, Math.min(2, W.lv - 1));
+    if (W.kind === 'venom') return ['glob', 'glob7', 'glob9'][i];
+    if (W.kind === 'sting') return ['lance', 'lance5', 'lance7'][i];
+    return 'streak';
+  }
+
   spawnBullet(x, y, W, dmg) {
-    const T = this.T;
-    let s = this.bulletPool[W.kind].pop();
+    const T = this.T, key = this.bulletKey(W);
+    const pool = (this.bulletPool[key] ||= []);
+    let s = pool.pop();
     if (!s) {
-      if (W.kind === 'venom') { s = new Sprite(T.glob); s.tint = FXC.green; }
-      else if (W.kind === 'sting') { s = new Sprite(T.lance); s.tint = FXC.purple; }
-      else { s = new Sprite(T.streak); s.tint = 0xffd860; }   // 蟻酸のしずく：明るい黄色の筋
+      s = new Sprite(T[key]);
+      s.tint = W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffd860;   // 蟻酸のしずく：明るい黄色の筋
       s.anchor.set(0.5, 0);
       this.glow.addChild(s);
     }
     s.alpha = 1;
     s.position.set(Math.round(x), Math.round(y));
-    const range = CONFIG.shot.range * (W.kind === 'sting' ? 1.25 : 1);
+    const range = CONFIG.shot.range * (W.kind === 'sting' ? 1.25 : 1) * this.G.run.mods.rangeMul;
     // 前にいる的へ、弾が少し曲がって集まる（群れの撃った弾が的に吸い込まれる）
     let vx = 0;
     const tg = this.aimAt(x, y, range);
@@ -1025,7 +1155,7 @@ export class Lane {
       const S = CONFIG.shot, sp = S.speed * (W.kind === 'sting' ? 1.25 : 1);
       vx = Math.max(-S.aimMax, Math.min(S.aimMax, (tg.x - x) / Math.max(8, y - tg.y))) * sp;
     }
-    this.bullets.push({ s, x, y, vx, py: y, y0: y, range, dmg, kind: W.kind, lv: W.lv, pierce: W.pierce, hit: null });
+    this.bullets.push({ s, key, x, y, vx, py: y, y0: y, range, dmg, kind: W.kind, lv: W.lv, pierce: W.pierce, hit: null });
   }
 
   updateBullets(dt) {
@@ -1082,7 +1212,7 @@ export class Lane {
   freeBullet(b) {
     // 消さずに透明にして使い回す（絵を出し入れすると、描く準備のやり直しで重くなる）
     b.s.alpha = 0;
-    this.bulletPool[b.kind].push(b.s);
+    this.bulletPool[b.key].push(b.s);
   }
 
   /** 弾が何かに当たったら true（弾は消える） */
@@ -1146,7 +1276,7 @@ export class Lane {
     const n = this.nest;
     if (n && n.hitTest(b.x, b.y)) {
       const mul = b.kind === 'sting' ? CONFIG.arms.bullet.bigMul : 1;
-      n.damage(b.dmg * mul + (b.kind === 'venom' ? CONFIG.arms.fire.dot[b.lv - 1] * 0.25 : 0));
+      n.damage((b.dmg * mul + (b.kind === 'venom' ? CONFIG.arms.fire.dot[b.lv - 1] * 0.25 : 0)) * this.G.run.mods.nestDmg);
       this.impact(b, b.x, b.y);
       return true;
     }
@@ -1199,7 +1329,7 @@ export class Lane {
     for (const e of this.eggs) if (e.state === 'alive' && inRange(e.x, e.y, e.r)) { e.damage(D); any = true; }
     for (const c of this.cocoons) if (c.state === 'alive' && inRange(c.x, c.y, c.r)) { c.damage(D); any = true; }
     for (const e of this.beetles) if (!e.dead && inRange(e.x, e.y, e.r)) { e.damage(D); e.y -= A.knock[lv - 1] * 0.5; any = true; }
-    if (this.nest && this.nest.state === 'alive' && inRange(this.nest.x, this.nest.y, 40)) { this.nest.damage(D * 2); any = true; }
+    if (this.nest && this.nest.state === 'alive' && inRange(this.nest.x, this.nest.y, 40)) { this.nest.damage(D * 2 * this.G.run.mods.nestDmg); any = true; }
     if (any) {
       this.biteT = A.every[lv - 1];
       this.fx.snap(sw, lv);
@@ -1302,7 +1432,7 @@ export class Lane {
     for (const e of this.beetles) if (!e.dead && Math.hypot(e.x - x, e.y - y) < R + e.r) e.damage(D);
     for (const e of this.eggs) if (e.state === 'alive' && Math.hypot(e.x - x, e.y - y) < R + e.r) e.damage(D);
     for (const c of this.cocoons) if (c.state === 'alive' && Math.hypot(c.x - x, c.y - y) < R + c.r) c.damage(D);
-    if (this.nest && this.nest.state === 'alive' && Math.abs(x - this.nest.x) < R + CONFIG.nest.hitW && y < this.nest.y + R) this.nest.damage(D * 2);
+    if (this.nest && this.nest.state === 'alive' && Math.abs(x - this.nest.x) < R + CONFIG.nest.hitW && y < this.nest.y + R) this.nest.damage(D * 2 * this.G.run.mods.nestDmg);
   }
 
   // ---------------------------------------------------------------------------
@@ -1387,7 +1517,11 @@ export class Lane {
     const G = this.G, fx = this.fx, run = G.run, N = CONFIG.nest;
     const secs = this.time - (n.reachedT ?? this.time);
     const stars = secs <= N.stars[0] ? 3 : secs <= N.stars[1] ? 2 : 1;
-    addHoney(run, CONFIG.honey.nest + this.stage.area + stars * N.honeyPerStar + Math.floor(run.count / 20) * N.honeyPer20);
+    let lost = 0;
+    for (const k in this.stats.loss) lost += this.stats.loss[k];
+    const flawless = lost === 0;
+    const bonus = CONFIG.honey.nest + this.stage.area + stars * N.honeyPerStar + Math.floor(run.count / 20) * N.honeyPer20 + (flawless ? N.flawless : 0);
+    this.honey(bonus, n.x, n.y - 50, 26);
     // 崩れる：何度も爆ぜて、土ぼこりと蜜が噴き出す
     const y = n.y - 40;
     for (let i = 0; i < 5; i++) {
@@ -1409,8 +1543,8 @@ export class Lane {
     this.swarm.speed = CONFIG.lane.speed * 0.6;   // 群れが巣へなだれ込む
     G.hud.bossBar(null);
     const starText = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-    G.banner(t('nest_down'), 'good', `${starText}  ${t('left_count', { n: fmt(run.count) })}`);
-    this.hooks.onClear?.({ stars });
+    G.banner(t('nest_down'), 'good', `${starText}  ${t('left_count', { n: fmt(run.count) })}${flawless ? '  ' + t('flawless') : ''}`);
+    this.hooks.onClear?.({ stars, kills: this.kills, left: run.count, honey: this.stageHoney, flawless });
   }
 
   // ---------------------------------------------------------------------------
@@ -1434,7 +1568,7 @@ export class Lane {
       else if (ev.kind === 'gold') this.panels.push(new Panel(this, 'gold', ev.x, y, L.gold.width, 2));
       else if (ev.kind === 'plus') {
         for (let i = 0; i < ev.n; i++) {
-          const p = new Panel(this, 'plus', ev.x, y - i * L.plusLane.gap, L.plusLane.width, ev.v ?? 1);
+          const p = new Panel(this, 'plus', ev.x, y - i * L.plusLane.gap, L.plusLane.width, (ev.v ?? 1) + this.G.run.mods.plusBonus);
           this.panels.push(p);
           if (i === 0) { obj = p; dy = 22; }
         }
@@ -1530,6 +1664,8 @@ export class Lane {
     }
     if (this.state === 'done' && this.nest && sw.y < this.nest.y + 80) sw.speed = 0;
     this.updateBar();
+    this.burstT -= dt;
+    this.updateDrops(dt);
     // 撃破数は少しずつ追いかけて数え上げる
     const want = this.G.run.kills || 0;
     this.killsShown = this.killsShown ?? want;

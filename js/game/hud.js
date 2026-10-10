@@ -24,9 +24,20 @@ export class Hud {
     this.killsShown = -1;
   }
 
+  /** ランで集めた蜜（右上。入るたびにはねる） */
+  honey(n) {
+    const el = $('hud-honey');
+    if (n === this.honeyShown) return;
+    this.honeyShown = n;
+    el.textContent = t('honey', { n: fmt(n) });
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  }
+
   /** 撃破数（数字は回るように増える） */
   kills(n) {
-    if (n === null) { this.killsEl.classList.add('hidden'); this.killsShown = -1; return; }
+    if (n === null) { this.killsEl.classList.add('hidden'); this.killsShown = -1; this.honeyShown = -1; return; }
     if (this.killsShown < 0) {
       this.killsEl.classList.remove('hidden');
       $('hud-kills-l').textContent = t('kills_label');
@@ -89,7 +100,7 @@ export class Hud {
     el.style.left = screenX + 'px';
     el.style.top = screenY + 'px';
     this.popLayer.appendChild(el);
-    setTimeout(() => el.remove(), kind === 'mutate' ? 2300 : 1300);
+    setTimeout(() => el.remove(), (kind || '').startsWith('mutate') ? 2300 : 1300);
   }
 
   flash(color, strength = 0.3) {
