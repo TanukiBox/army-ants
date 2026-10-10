@@ -81,6 +81,17 @@
   #banner.good .b-main { text-shadow: 0 0 14px #3a8cff, 0 2px 3px #000; }
   #banner.boss .b-main { color: #ffd0c0; font-size: 30px; text-shadow: 0 0 18px #ff2a1a, 0 0 4px #ff2a1a, 0 2px 3px #000; }
   #banner.area .b-main { font-size: 24px; }
+  #banner.fever .b-main { color: #ffe0c0; font-size: 32px; text-shadow: 0 0 18px #ff2a00, 0 0 6px #ff5a2a, 0 2px 3px #000; }
+  #banner.fever .b-sub { color: #ffb08a; font-weight: 700; }
+  #fever { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 14px); transform: translateX(-50%); width: min(70%, 260px);
+    text-align: center; pointer-events: none; }
+  #fever-label { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: #ffb08a; text-shadow: 0 1px 2px #000; margin-bottom: 3px; }
+  #fever .bar { height: 7px; background: rgba(20, 6, 8, 0.85); border: 1px solid #5a1420; border-radius: 4px; overflow: hidden; }
+  #fever-fill { height: 100%; width: 0; background: linear-gradient(90deg, #a8141c, #ff7a2a); box-shadow: 0 0 8px #ff3a2a; }
+  #fever.ready #fever-label { color: #fff2c0; animation: blink 0.5s ease-in-out infinite; }
+  #fever.ready #fever-fill { background: linear-gradient(90deg, #ff7a2a, #ffe060); box-shadow: 0 0 12px #ffb000; }
+  #fever.on #fever-fill { background: linear-gradient(90deg, #ff2a00, #ffd0a0); box-shadow: 0 0 14px #ff2a00; }
+  #fever.on #fever-label { color: #fff; text-shadow: 0 0 10px #ff2a00, 0 1px 2px #000; }
   @keyframes banner { 0% { opacity: 0; transform: scale(1.25); } 10% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
   #flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen; }
 
@@ -203,6 +214,7 @@
       <button id="btn-pause" aria-label="pause">❚❚</button>
     </div>
   </div>
+  <div id="fever" class="hidden"><div id="fever-label"></div><div class="bar"><div id="fever-fill"></div></div></div>
   <div id="boss" class="hidden"><div id="boss-name"></div><div class="bar"><div id="boss-fill"></div></div></div>
 
   <div id="title" class="screen hidden">

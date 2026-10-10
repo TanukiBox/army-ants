@@ -6,7 +6,7 @@ const KEY = 'armyants.save.v1';
 const DEFAULTS = () => ({
   settings: { lang: null, sound: true },
   records: { bestStage: -1, bestCount: 0 },
-  tips: { siege: 0, lane: 0 },   // 説明を何回見たか
+  tips: { siege: 0, lane: 0, fever: 0 },   // 説明を何回見たか
 });
 
 let data = DEFAULTS();

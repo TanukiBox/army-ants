@@ -24,6 +24,21 @@ export class Hud {
     this.killsShown = -1;
   }
 
+  /** 警報フェロモンのゲージ（null で隠す）。state: 'fill' / 'ready' / 'on' */
+  fever(ratio, state = 'fill', hint = false) {
+    const el = $('fever');
+    if (ratio === null) { el.classList.add('hidden'); this.feverKey = ''; return; }
+    const key = state + Math.round(ratio * 100) + hint;
+    if (key === this.feverKey) return;
+    this.feverKey = key;
+    el.classList.remove('hidden');
+    el.classList.toggle('ready', state === 'ready');
+    el.classList.toggle('on', state === 'on');
+    $('fever-fill').style.width = (Math.max(0, Math.min(1, ratio)) * 100).toFixed(0) + '%';
+    $('fever-label').textContent = state === 'ready' ? `${t('fever_label')}  ${t('fever_ready')}`
+      : state === 'on' ? t('fever') : hint ? `${t('fever_label')}：${t('fever_hint')}` : t('fever_label');
+  }
+
   /** ランで集めた蜜（右上。入るたびにはねる） */
   honey(n) {
     const el = $('hud-honey');

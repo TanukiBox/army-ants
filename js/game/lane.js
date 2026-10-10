@@ -752,6 +752,9 @@ export class Lane {
     this.lastKillT = -9;
     this.predAcc = 0;
     this.burstT = 0;         // 変異した直後の試し撃ち
+    this.feverT = 0;         // 警報フェロモンで大暴れしている残り時間
+    this.feverHint = (getSave().tips.fever || 0) < 3;   // 最初の3回はゲージに説明を出す
+    if (this.feverHint) { getSave().tips.fever = (getSave().tips.fever || 0) + 1; save(); }
     this.grid = Array.from({ length: NB }, () => []);
     this.aimList = [];
     this.screenY = CONFIG.lane.swarmScreenY;
@@ -835,6 +838,7 @@ export class Lane {
     if (k <= 0) return 0;
     const why = opts.why || 'other';
     this.stats.loss[why] = (this.stats.loss[why] || 0) + k;
+    if (why !== 'bomb') this.addFever(k * CONFIG.fever.perLoss);   // 追い込まれるほど早くたまる
     const at = opts.at;
     const pick = opts.pick || (at ? (a) => Math.hypot(a.x - at.x, a.y - at.y) : undefined);
     this.setCount(run.count - k, { pick, removedBurst: opts.burst !== false });
@@ -924,6 +928,12 @@ export class Lane {
     h.lastDeath = this.time;
     if (cause === 'clash') {
       fx.burst(fx.over, u.x, u.y, 3, { color: [0x8a7048, 0x3a111b, 0x9a5222], speed: [20, 60], life: [0.15, 0.35], drag: 6 });
+    } else if (cause === 'trample') {
+      fx.burst(fx.glow, u.x, u.y - 2, 3, { color: [0xff7a3a, 0xffe0b0], speed: [20, 60], life: [0.12, 0.28], drag: 6 });
+      fx.burst(fx.over, u.x, u.y, 4, { color: [0xd8c0a0, 0x8a7048, 0x6a5538], speed: [25, 80], life: [0.2, 0.5], drag: 5 });
+      this.kills++;
+      this.G.run.kills = (this.G.run.kills || 0) + 1;
+      sfx.pop();
     } else if (cause === 'flee') {
       fx.burst(fx.over, u.x, u.y, 3, { color: [0xd8c0a0, 0x8a7048], speed: [20, 60], life: [0.2, 0.4], drag: 5 });
     } else {
@@ -933,6 +943,7 @@ export class Lane {
       h.shot++;
       this.kills++;
       this.G.run.kills = (this.G.run.kills || 0) + 1;
+      this.addFever(u.soldier ? CONFIG.fever.perSoldier : CONFIG.fever.perKill);
       if (this.kills % CONFIG.horde.killsPerHoney === 0) this.honey(1, u.x, u.y, 1);
       sfx.pop();
       // 続けて倒すと、節目でほめる
@@ -965,6 +976,55 @@ export class Lane {
       this.G.view.shake(CONFIG.feel.shakeSmall);
       fx.ring(fx.glow, u.x, u.y, 4, 30, 0.4, 0xffffff, 0.7);
     }
+  }
+
+  /** 警報フェロモンのゲージを足す */
+  addFever(n) {
+    if (this.feverT > 0 || this.state !== 'run') return;
+    const run = this.G.run, F = CONFIG.fever;
+    const was = run.fever || 0;
+    run.fever = Math.min(F.max, was + n);
+    if (was < F.max && run.fever >= F.max) sfx.feverReady();
+  }
+
+  /** 前に敵がいるか（満タンになっても、敵がいないところでは始めない） */
+  enemyAhead() {
+    const sw = this.swarm, R = CONFIG.shot.range;
+    for (const h of this.hordes) {
+      if (h.wiped) continue;
+      for (const u of h.units) if (!u.dead && u.y < sw.y && sw.y - u.y < R) return true;
+    }
+    return !!(this.nest && this.nest.state === 'alive' && sw.y - this.nest.y < R + 40);
+  }
+
+  startFever() {
+    const G = this.G, sw = this.swarm, F = CONFIG.fever;
+    G.run.fever = 0;
+    this.feverT = F.time;
+    G.banner(t('fever'), 'fever', t('fever_sub'));
+    G.flash(0xff2a00, 0.35);
+    G.view.shake(3);
+    G.hitstop(0.05);
+    sfx.fever();
+    for (const a of sw.ants) sw.flashAnt(a, 0xff3a1a);
+    this.fx.ring(this.fx.glow, sw.x, sw.y, 4, 34, 0.5, 0xff5a2a, 1);
+  }
+
+  updateFever(dt) {
+    const F = CONFIG.fever, sw = this.swarm, run = this.G.run;
+    if (this.feverT > 0) {
+      this.feverT -= dt;
+      // 群れがちらちらと赤く光る
+      if (Math.random() < dt * 30 && sw.ants.length) {
+        for (let i = 0; i < 6; i++) sw.flashAnt(sw.ants[Math.floor(Math.random() * sw.ants.length)], 0xff3a1a);
+      }
+      if (Math.random() < dt * 20) this.fx.spark(this.fx.glow, sw.x + (Math.random() - 0.5) * sw.rx * 2, sw.y + (Math.random() - 0.5) * sw.ry, { color: 0xff7a3a, vy: -30, life: 0.4, drag: 1 });
+      this.G.hud.fever(Math.max(0, this.feverT / F.time), 'on');
+      return;
+    }
+    const full = (run.fever || 0) >= F.max;
+    if (full && this.state === 'run' && this.enemyAhead()) { this.startFever(); return; }
+    this.G.hud.fever((run.fever || 0) / F.max, full ? 'ready' : 'fill', this.feverHint);
   }
 
   praiseCombo(i) {
@@ -1066,6 +1126,7 @@ export class Lane {
     this.unitsIn(sw.x - rx, sw.x + rx, (u) => {
       const dx = (u.x - sw.x) / rx, dy = (u.y - sw.y) / ry;
       if (dx * dx + dy * dy < 1) {
+        if (this.feverT > 0) { this.killUnit(u, 'trample'); return; }
         this.killUnit(u, 'clash');
         lost += u.soldier ? 2 : 1;
         cx += u.x;
@@ -1102,6 +1163,7 @@ export class Lane {
     if (w?.type === 'bomb') rate *= A.bomb.rateMul;
     if (w?.type === 'mandible') rate *= A.mandible.rateMul;
     if (this.burstT > 0) rate *= CONFIG.shot.burstMul;
+    if (this.feverT > 0) { rate *= CONFIG.fever.fireMul; dmg *= CONFIG.fever.dmgMul; }
     return { rate: rate / m.fireRate, dmg: dmg * m.dmgMul, kind, lv: w?.lv ?? 0, pierce };
   }
 
@@ -1110,7 +1172,7 @@ export class Lane {
     if (sw.count <= 0 || !sw.ants.length) return;
     const W = this.weaponInfo();
     const want = sw.count * W.rate;
-    const perSec = Math.min(want, CONFIG.shot.maxPerSec);
+    const perSec = Math.min(want, this.feverT > 0 ? CONFIG.fever.maxPerSec : CONFIG.shot.maxPerSec);
     const dmg = W.dmg * (want / Math.max(1e-6, perSec));   // 弾の数の上限を超えた分は、1発を強くする
     this.fireAcc += perSec * dt;
     let shots = 0;
@@ -1146,6 +1208,7 @@ export class Lane {
       this.glow.addChild(s);
     }
     s.alpha = 1;
+    s.tint = this.feverT > 0 && W.kind === 'acid' ? CONFIG.fever.tint : W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffd860;
     s.position.set(Math.round(x), Math.round(y));
     const range = CONFIG.shot.range * (W.kind === 'sting' ? 1.25 : 1) * this.G.run.mods.rangeMul;
     // 前にいる的へ、弾が少し曲がって集まる（群れの撃った弾が的に吸い込まれる）
@@ -1331,7 +1394,7 @@ export class Lane {
     for (const e of this.beetles) if (!e.dead && inRange(e.x, e.y, e.r)) { e.damage(D); e.y -= A.knock[lv - 1] * 0.5; any = true; }
     if (this.nest && this.nest.state === 'alive' && inRange(this.nest.x, this.nest.y, 40)) { this.nest.damage(D * 2 * this.G.run.mods.nestDmg); any = true; }
     if (any) {
-      this.biteT = A.every[lv - 1];
+      this.biteT = A.every[lv - 1] / (this.feverT > 0 ? 2 : 1);
       this.fx.snap(sw, lv);
       sfx.snap();
     } else this.biteT = 0.06;
@@ -1344,7 +1407,7 @@ export class Lane {
     const Bm = CONFIG.arms.bomb, sw = this.swarm;
     const target = this.bombTarget(Bm.reach);
     if (!target) { this.bombT = 0.15; return; }
-    this.bombT = Bm.every[lv - 1];
+    this.bombT = Bm.every[lv - 1] / (this.feverT > 0 ? 2 : 1);
     const n = Math.min(Bm.ants[lv - 1], Math.max(0, sw.count - 1));
     if (n <= 0) return;
     const V = this.S.ants[sw.variant];
@@ -1665,6 +1728,9 @@ export class Lane {
     if (this.state === 'done' && this.nest && sw.y < this.nest.y + 80) sw.speed = 0;
     this.updateBar();
     this.burstT -= dt;
+    this.updateFever(dt);
+    // 大暴れ中は前へ速く進む（巣の前で止まっているときは止まったまま）
+    if (sw.speed > 0 && this.state === 'run') sw.speed = CONFIG.lane.speed * (this.feverT > 0 ? CONFIG.fever.speedMul : 1);
     this.updateDrops(dt);
     // 撃破数は少しずつ追いかけて数え上げる
     const want = this.G.run.kills || 0;

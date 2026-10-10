@@ -143,6 +143,16 @@ export const sfx = {
     const b = 440 * 2 ** (Math.min(level, 8) / 6);
     [0, 4, 7, 12].forEach((s, i) => tone(b * 2 ** (s / 12), 0.12, { type: 'square', vol: 0.08, delay: i * 0.05 }));
   },
+  /** 警報フェロモン：群れが大暴れ */
+  fever() {
+    if (!ok('fever', 0.5)) return;
+    tone(330, 0.5, { type: 'sawtooth', vol: 0.1, to: 990 });
+    tone(220, 0.6, { type: 'square', vol: 0.07, to: 880, delay: 0.1 });
+    tone(660, 0.5, { type: 'sawtooth', vol: 0.06, to: 1320, delay: 0.25 });
+    noise(0.8, { vol: 0.22, freq: 400, to: 3000, type: 'bandpass', q: 1 });
+  },
+  /** ゲージが満タンになった */
+  feverReady() { if (ok('fready', 0.5)) [0, 7, 12].forEach((s, i) => tone(784 * 2 ** (s / 12), 0.1, { type: 'square', vol: 0.07, delay: i * 0.06 })); },
   /** 蜜が入った */
   honey() { if (ok('honey', 0.045)) tone(1500 + Math.random() * 500, 0.04, { type: 'sine', vol: 0.05, to: 2400 }); },
   /** 卵が割れて仲間が生まれた */

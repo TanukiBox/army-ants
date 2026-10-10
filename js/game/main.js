@@ -207,6 +207,7 @@ function clearPlay() {
   G.fx.clear();
   G.hud.bossBar(null);
   G.hud.kills(null);
+  G.hud.fever(null);
   for (const p of G.nums) p.n.destroy();
   G.nums = [];
   G.slowT = 0;
