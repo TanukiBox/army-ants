@@ -80,16 +80,20 @@ export class PixelText extends Container {
     text = String(text);
     if (text === this.text) return;
     this.text = text;
-    this.removeChildren().forEach((c) => c.destroy());
-    let x = 0;
+    // 文字の絵は使い回す（数字は何度も変わるので、作り直すとスマホで引っかかる）
+    let x = 0, k = 0;
     for (const ch of text) {
       const t = atlas[ch];
       if (!t) { x += 4; continue; }
-      const s = new Sprite(t);
+      let s = this.children[k];
+      if (!s) { s = new Sprite(t); this.addChild(s); }
+      s.texture = t;
+      s.alpha = 1;
       s.x = x;
-      this.addChild(s);
+      k++;
       x += ch === ',' ? GW - 3 : GW - 1;   // ふちを重ねて詰める
     }
+    for (let i = k; i < this.children.length; i++) this.children[i].alpha = 0;
     this.textWidth = x + 1;
     this.scale.set(this.pxScale);
     this.pivot.set(Math.floor(this.textWidth / 2), GH);   // 下の真ん中が基準

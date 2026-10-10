@@ -50,6 +50,10 @@
   .pop.mutate { color: #fff; font-size: 16px; text-align: center; animation-duration: 2.2s; }
   .pop small { display: block; margin-top: 2px; font-size: 12px; font-weight: 700; color: #ffe0c8; }
   #field-ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .hint { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; font-size: 12px; font-weight: 800; color: #fff;
+    background: rgba(10, 6, 8, 0.78); border: 1px solid #ffd060; border-radius: 8px; padding: 2px 8px; box-shadow: 0 0 10px rgba(255, 208, 96, 0.35);
+    animation: hintIn 0.3s ease-out; }
+  @keyframes hintIn { from { opacity: 0; margin-top: 6px; } to { opacity: 1; margin-top: 0; } }
   .c-lbl { position: absolute; transform: translate(-50%, -100%); text-align: center; white-space: nowrap; line-height: 1.2;
     color: var(--c); text-shadow: 0 0 6px var(--c), 0 1px 2px #000, 0 0 3px #000; }
   .c-lbl b { display: block; font-size: 13px; font-weight: 900; }

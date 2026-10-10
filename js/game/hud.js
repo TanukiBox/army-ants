@@ -95,7 +95,7 @@ export function hideScreens() {
   for (const el of document.querySelectorAll('.screen')) el.classList.add('hidden');
 }
 
-export function fillResult({ title, sub, reached, maxCount, best, shortBy, good, honey = '', unlock = '', daily = '' }) {
+export function fillResult({ title, sub, reached, maxCount, best, shortBy, shortText = '', good, honey = '', unlock = '', daily = '' }) {
   $('res-honey').textContent = honey;
   $('res-unlock').textContent = unlock;
   $('res-unlock').classList.toggle('hidden', !unlock);
@@ -103,8 +103,9 @@ export function fillResult({ title, sub, reached, maxCount, best, shortBy, good,
   $('res-title').textContent = title;
   $('res-title').className = good ? 'good' : 'bad';
   $('res-sub').textContent = sub || '';
-  $('res-short').textContent = shortBy ? t('short_by', { n: fmt(shortBy) }) : '';
-  $('res-short').classList.toggle('hidden', !shortBy);
+  const short = shortText || (shortBy ? t('short_by', { n: fmt(shortBy) }) : '');
+  $('res-short').textContent = short;
+  $('res-short').classList.toggle('hidden', !short);
   $('res-reached').textContent = t('reached', { where: reached });
   $('res-max').textContent = t('max_count', { n: fmt(maxCount) });
   $('res-best').textContent = best;

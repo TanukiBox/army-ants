@@ -62,6 +62,8 @@ export function textures() {
     if (x === 1) return head ? 1 : 1 - (y - 3) / 14;
     return head && y > 0 ? 0.8 : (y < 8 ? 0.35 * (1 - y / 8) : 0);
   });
+  // 蟻酸のしずく（上が先頭の短い筋）
+  TEX.streak = pixTex(2, 6, (x, y) => (y < 2 ? 1 : 1 - (y - 1) / 6));
   // 毒弾（緑の玉）
   TEX.glob = pixTex(5, 5, (x, y) => {
     const d = Math.hypot(x - 2, y - 2);
@@ -80,17 +82,24 @@ export class FX {
     this.parts = [];
     this.anims = [];   // 動きを自分で決める物（弾・突撃するアリ・広がる輪など）
     this.timers = {};
+    this.pools = new Map();   // 消えた粒の絵を、重ねる場所ごとに使い回す
   }
 
   /** 粒を1つ出す */
   spark(layer, x, y, o) {
-    const s = new Sprite(o.tex || (o.size >= 2 ? TEX.dot2 : TEX.dot));
-    s.anchor.set(0.5);
+    let pool = this.pools.get(layer);
+    if (!pool) { pool = []; this.pools.set(layer, pool); }
+    let s = pool.pop();
+    if (!s) {
+      s = new Sprite();
+      s.anchor.set(0.5);
+      layer.addChild(s);
+    }
+    s.texture = o.tex || (o.size >= 2 ? TEX.dot2 : TEX.dot);
     s.tint = o.color ?? 0xffffff;
     s.alpha = o.alpha ?? 1;
-    layer.addChild(s);
     this.parts.push({
-      s, x, y, vx: o.vx || 0, vy: o.vy || 0, life: o.life || 0.4, max: o.life || 0.4,
+      s, layer, x, y, vx: o.vx || 0, vy: o.vy || 0, life: o.life || 0.4, max: o.life || 0.4,
       drag: o.drag ?? 3, a0: s.alpha, fade: o.fade ?? true,
     });
     s.position.set(Math.round(x), Math.round(y));
@@ -148,7 +157,13 @@ export class FX {
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
       p.life -= dt;
-      if (p.life <= 0) { p.s.destroy(); this.parts.splice(i, 1); continue; }
+      if (p.life <= 0) {
+        p.s.alpha = 0;   // 消さずに透明にして使い回す
+        this.pools.get(p.layer).push(p.s);
+        this.parts[i] = this.parts[this.parts.length - 1];
+        this.parts.pop();
+        continue;
+      }
       const k = Math.exp(-dt * p.drag);
       p.vx *= k;
       p.vy *= k;
@@ -163,8 +178,8 @@ export class FX {
   }
 
   clear() {
-    for (const p of this.parts) p.s.destroy();
     this.parts = [];
+    this.pools = new Map();
     for (const c of [this.under, this.over, this.glow]) c.removeChildren().forEach((s) => s.destroy());
     this.anims = [];
   }
@@ -194,11 +209,12 @@ export class FX {
   /** ふつうのアリ：蟻酸のしずくを前へ飛ばす */
   acid(swarm) {
     for (const a of swarm.randomAnts(2)) {
-      const s = this.spark(this.over, a.x, a.y - 8, { tex: TEX.dot2, color: C.acid, life: 3, fade: false, drag: 0 });
+      this.spark(this.over, a.x, a.y - 8, { tex: TEX.dot2, color: C.acid, life: 3, fade: false, drag: 0 });
+      const part = this.parts[this.parts.length - 1];
       const range = 90 + Math.random() * 60;
       let d = 0;
       this.anims.push({ update: (dt) => {
-        const p = this.parts.find((q) => q.s === s);
+        const p = this.parts.includes(part) ? part : null;
         if (!p) return false;
         p.y -= 150 * dt;
         d += 150 * dt;

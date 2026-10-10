@@ -18,10 +18,10 @@ export const SWARM = {
   maxHalfHeight: 118,  // 群れの縦の長さの半分の上限（それより多い数は密度で表す）
 };
 
-/** 匹数 → 群れの半径（ドット） */
-export function swarmRadius(n) {
+/** 匹数 → 群れの半径（ドット）。shape で密度を変えられる */
+export function swarmRadius(n, shape = SWARM) {
   const m = Math.min(n, SWARM.maxFull);
-  let R = Math.sqrt((m * SWARM.areaPerAnt) / Math.PI);
+  let R = Math.sqrt((m * shape.areaPerAnt) / Math.PI);
   if (n > SWARM.maxFull) R *= 1 + 0.3 * Math.log10(n / SWARM.maxFull);
   return R;
 }
@@ -57,6 +57,14 @@ export class Swarm {
     this.time = 0;
     this.sweep = null;    // 変異の光が走っている途中なら
     this.shownCount = 0;
+    // 隊形の密度と幅の上限（場面ごとに変えられる）
+    this.shape = { areaPerAnt: SWARM.areaPerAnt, maxHalfWidth: SWARM.maxHalfWidth, maxHalfHeight: SWARM.maxHalfHeight };
+  }
+
+  /** 隊形の密度と幅の上限を変える（省いた値は元に戻す） */
+  setShape(shape = {}) {
+    this.shape = { areaPerAnt: SWARM.areaPerAnt, maxHalfWidth: SWARM.maxHalfWidth, maxHalfHeight: SWARM.maxHalfHeight, ...shape };
+    this.setCount(this.count);
   }
 
   setVariant(name, { glowColor, pulse = 'steady', glowScale = 1, sweep = false } = {}) {
@@ -88,7 +96,7 @@ export class Swarm {
     this._adjust(fullAnts, full, false, opts);
     this._adjust(carpetAnts, carpet, true, opts);
     this.ants = fullAnts.concat(carpetAnts);
-    this.R = swarmRadius(n);
+    this.R = swarmRadius(n, this.shape);
     this._assignHomes(fullAnts, carpetAnts);
   }
 
@@ -188,12 +196,12 @@ export class Swarm {
   }
 
   /** 群れの横の半径（ドット）。数が多くても maxHalfWidth より太くならない */
-  get rx() { return Math.min(this.R * 1.28, SWARM.maxHalfWidth); }
+  get rx() { return Math.min(this.R * 1.28, this.shape.maxHalfWidth); }
 
   /** 群れの縦の半径。横幅が上限に届いたら、その分だけ縦に長くなる（行進の列のように） */
   get ry() {
     const rx0 = this.R * 1.28;
-    return Math.min(this.R * 0.74 * rx0 / Math.max(1, this.rx), SWARM.maxHalfHeight);
+    return Math.min(this.R * 0.74 * rx0 / Math.max(1, this.rx), this.shape.maxHalfHeight);
   }
 
   /** くっきり描いているアリの数 */

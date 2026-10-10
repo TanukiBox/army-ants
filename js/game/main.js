@@ -1,4 +1,4 @@
-// ARMY ANTS 本体：起動、画面の流れ（タイトル → ステージ → 攻城／ボス → 次のステージ … → クリア）
+// ARMY ANTS 本体：起動、画面の流れ（タイトル → ステージ（大群を撃ちながら進み、奥の巣を落とす）→ 次のステージ … → クリア）
 import { Application, Container, Sprite, Texture, Graphics } from '../../vendor/pixi.min.mjs';
 import { PixelView } from '../core/pixelview.js';
 import { loadSprites } from '../core/sprites.js';
@@ -11,14 +11,12 @@ import { CONFIG } from './config.js';
 import { t, setLang, getLang, fmt } from './i18n.js';
 import { loadSave, getSave, save, deleteSave, recordRun } from './save.js';
 import { initAudio, setSoundEnabled, sfx } from './audio.js';
-import { buildRun, AREAS } from './stages.js';
+import { buildLaneRun, AREAS } from './course.js';
 import { meta, runSetup, refreshMods, finishRun, todayKey, dailyRecord, recordDaily, upgradeCost, buyUpgrade,
          lockedCards, buyCard, UPGRADE_KEYS } from './meta.js';
 import { drawCards, cardText } from './cards.js';
 import { rngFor } from '../core/rng.js';
-import { Field } from './runner.js';
-import { Siege } from './siege.js';
-import { Boss } from './boss.js';
+import { Lane } from './lane.js';
 import { Hud, showScreen, hideScreens, fillResult } from './hud.js';
 import { variantName, swarmLook } from './mutation.js';
 
@@ -26,13 +24,12 @@ const HALF = CONFIG.track.width / 2;
 const $ = (id) => document.getElementById(id);
 
 const G = {
-  phase: 'loading',     // title / runner / boss / siege / between / result
+  phase: 'loading',     // title / runner / between / cards / result
   paused: false,
   timeScale: 1,
   slowT: 0,
   run: null,
   field: null,
-  siege: null,
   nums: [],
 };
 window.ARMY = G;   // 確認用
@@ -139,7 +136,7 @@ async function boot() {
 }
 
 function isPlaying() {
-  return ['runner', 'boss', 'siege', 'between'].includes(G.phase) && !G.paused;
+  return ['runner', 'between'].includes(G.phase) && !G.paused;
 }
 
 // -----------------------------------------------------------------------------
@@ -155,9 +152,8 @@ function frame(realDt) {
   if (G.phase === 'title') {
     sw.targetX = Math.sin(sw.time * 0.5) * 70;
   }
-  if (G.phase !== 'siege') sw.update(dt);
+  sw.update(dt);
   G.field?.update(dt);
-  G.siege?.update(dt);
   G.fx.update(dt);
   if (G.timers.length) {
     const due = [];
@@ -174,20 +170,20 @@ function frame(realDt) {
     return true;
   });
   // カメラ
-  if (G.phase !== 'siege') {
+  {
     const span = HALF + 12 - view.W / 2;
     view.camX = span > 0 ? Math.max(-span, Math.min(span, sw.x * 0.8)) : 0;
-    view.camY = sw.y - (CONFIG.runner.swarmScreenY - 0.5) * view.H;
+    view.camY = sw.y - ((G.field?.screenY ?? CONFIG.runner.swarmScreenY) - 0.5) * view.H;
   }
   G.ground.update(view.camX, view.camY, view.W, view.H);
   // 群れの下の地面を照らす光
-  G.light.visible = G.phase !== 'siege' && sw.count > 0;
+  G.light.visible = sw.count > 0;
   G.light.tint = sw.glowColor;
   G.light.alpha = 0.12 + Math.min(0.08, sw.ants.length / 4000);
   G.light.position.set(Math.round(sw.x), Math.round(sw.y));
   G.light.width = sw.rx * 2.6 + 50;
   G.light.height = sw.ry * 2.6 + 50;
-  sw.label.visible = G.phase !== 'siege' && G.phase !== 'title' && sw.count > 0;
+  sw.label.visible = G.phase !== 'title' && sw.count > 0;
   // 道のはしを暗く
   const e = G.edges;
   e.clear();
@@ -206,8 +202,6 @@ function clearPlay() {
   G.timers = [];
   G.field?.destroy();
   G.field = null;
-  G.siege?.destroy();
-  G.siege = null;
   G.fx.clear();
   G.hud.bossBar(null);
   for (const p of G.nums) p.n.destroy();
@@ -265,7 +259,7 @@ function startRun(mode = 'normal') {
   hideScreens();
   const setup = runSetup(mode);
   G.run = {
-    ...setup, stages: buildRun(setup.seed), stageIndex: 0,
+    ...setup, stages: buildLaneRun(setup.seed), stageIndex: 0,
     count: setup.startCount, maxCount: setup.startCount, weapon: null, armor: 0,
     cards: [], honey: 0, shortBy: 0,
   };
@@ -277,10 +271,9 @@ function startRun(mode = 'normal') {
 }
 
 // 確認用：好きなステージ・匹数・変異から始める（コンソールから ARMY.debugStart(10, 500, 'bullet', 2, 1)）
-G.debugStart = (i, count = 100, weapon = null, wlv = 1, armor = 0, cards = []) => {
+G.debugStart = (i, count = 10, weapon = null, wlv = 1, armor = 0, cards = []) => {
   startRun();
-  G.run.count = count;
-  G.run.maxCount = count;
+  G.run.startCount = count;
   G.run.weapon = weapon ? { type: weapon, lv: wlv } : null;
   G.run.armor = armor;
   G.run.cards = cards;
@@ -294,6 +287,7 @@ function startStage(i) {
   const run = G.run;
   run.stageIndex = i;
   run.shortBy = 0;
+  run.count = run.startCount;   // 毎ステージ少ない群れから始める（持ち越すのは変異とカード）
   const stage = run.stages[i];
   G.ground.setArea(stage.areaName);
   const sw = G.swarm;
@@ -302,9 +296,12 @@ function startStage(i) {
   sw.setVariant(variantName(run), swarmLook(run));
   sw.setCount(run.count);
   G.view.camX = 0;
-  G.view.camY = sw.y - (CONFIG.runner.swarmScreenY - 0.5) * G.view.H;
-  G.field = new Field(G, stage, {
-    onCourseEnd: () => courseEnd(stage),
+  G.view.camY = sw.y - (CONFIG.lane.swarmScreenY - 0.5) * G.view.H;
+  G.field = new Lane(G, stage, {
+    onClear: () => {
+      G.phase = 'between';
+      G.later(CONFIG.lane.clearDelay, () => stageCleared());
+    },
     onWipe: () => gameOver('wipe'),
   });
   G.phase = 'runner';
@@ -312,62 +309,7 @@ function startStage(i) {
   G.hud.refresh();
   const title = stage.local === 0 ? t('area', { n: stage.area + 1 }) + '  ' + t('area_' + stage.areaName)
                                    : t('stage', { a: stage.area + 1, s: stage.local + 1 });
-  G.banner(title, stage.local === 0 ? 'area' : '', t('phase_run'));
-}
-
-function courseEnd(stage) {
-  if (G.phase !== 'runner') return;
-  if (stage.boss) {
-    G.phase = 'boss';
-    spawnBoss(stage.bossKind);
-  } else {
-    // コースを抜けた → 少し走ってから攻城へ（何が起きたか分かるように）
-    G.phase = 'between';
-    G.banner(t('course_clear'), 'good', t('next_siege', { n: fmt(G.run.count) }));
-    sfx.clear();
-    G.later(1.1, () => { if (G.phase === 'between' && G.field) startSiege(stage); });
-  }
-}
-
-function spawnBoss(kind) {
-  const f = G.field;
-  f.boss?.destroy();
-  f.boss = new Boss(f, kind, {
-    onDefeated: () => {
-      if (kind === 'hornet') {
-        G.banner(t('queen_appears'), 'boss');
-        G.later(0.9, () => { if (G.field === f && G.phase === 'boss') spawnBoss('queen'); });
-      } else if (kind === 'queen') {
-        allClear();
-      } else {
-        G.banner(t('boss_down'), 'good', t('carry', { n: fmt(G.run.count) }));
-        sfx.clear();
-        G.phase = 'between';
-        G.later(1.6, () => stageCleared());
-      }
-    },
-  });
-  if (kind !== 'queen') G.banner(t('boss_' + kind), 'boss', t('phase_boss'));
-}
-
-function startSiege(stage) {
-  G.flash(0x000000, 0.8);
-  G.field.destroy();
-  G.field = null;
-  G.fx.clear();
-  G.swarm.clear();
-  G.phase = 'siege';
-  G.siege = new Siege(G, stage, {
-    onClear: (survivors) => {
-      G.run.count = Math.round(survivors);
-      G.run.maxCount = Math.max(G.run.maxCount, G.run.count);
-      G.banner(t('stage_clear'), 'good', t('carry', { n: fmt(G.run.count) }));
-      sfx.clear();
-      G.phase = 'between';
-      G.later(1.3, () => stageCleared());
-    },
-    onFail: (hp) => gameOver('siege', hp),
-  });
+  G.banner(title, stage.local === 0 ? 'area' : '', t('phase_lane'));
 }
 
 /** ステージを落とした → 法則カードを選んで次へ */
@@ -376,7 +318,8 @@ function stageCleared() {
   recordRun(G.run.stageIndex, G.run.maxCount);
   if (G.run.count <= 0) { gameOver('wipe'); return; }
   if (G.run.stageIndex + 1 >= G.run.stages.length) { allClear(); return; }
-  showCards();
+  if (CONFIG.cards.betweenStages) showCards();
+  else startStage(G.run.stageIndex + 1);
 }
 
 function showCards() {
@@ -423,20 +366,23 @@ function endRun(cleared) {
   return res;
 }
 
-function gameOver(reason, hp = 0) {
+function gameOver(reason) {
   if (G.phase === 'result') return;
   G.phase = 'result';
   sfx.gameOver();
   const run = G.run;
+  // 巣の前で全滅したときは、巣の残りの耐久を見せる
+  const nest = G.field?.nest;
+  const shortText = nest && nest.state === 'alive' ? t('nest_left', { n: fmt(Math.ceil(nest.hp)) }) : '';
   recordRun(run.stageIndex, run.maxCount);
   const res = endRun(false);
   const r = getSave().records;
   G.later(0.9, () => {
     fillResult({
-      title: reason === 'siege' ? t('siege_failed') : t('game_over'),
+      title: t('game_over'),
       reached: whereLabel(run.stageIndex),
       maxCount: run.maxCount,
-      shortBy: reason === 'siege' ? hp : Math.max(1, run.shortBy || 1),
+      shortText,
       best: t('best', { where: stageLabel(r.bestStage), n: fmt(r.bestCount) }),
       honey: t('honey_gained', { n: fmt(res.honey), total: fmt(meta().honey) }),
       daily: t('daily_rec', { date: todayKey(), rec: dailyText() }),
@@ -454,10 +400,9 @@ function allClear() {
   recordRun(run.stages.length - 1, run.maxCount);
   const res = endRun(true);
   const r = getSave().records;
-  G.banner(t('all_clear'), 'good');
-  G.later(2.6, () => {
+  G.later(1.2, () => {
     fillResult({
-      title: t('all_clear'), sub: t('all_clear_sub'), reached: t('boss_queen'),
+      title: t('r1_end'), sub: t('r1_end_sub'), reached: whereLabel(run.stages.length - 1),
       maxCount: run.maxCount, best: t('best', { where: stageLabel(r.bestStage), n: fmt(r.bestCount) }), good: true,
       honey: t('honey_gained', { n: fmt(res.honey), total: fmt(meta().honey) }),
       unlock: res.unlocked ? t('invasion_unlocked', { n: res.unlocked }) : '',
