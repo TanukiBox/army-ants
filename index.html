@@ -83,6 +83,12 @@
   #banner.area .b-main { font-size: 24px; }
   #banner.fever .b-main { color: #ffe0c0; font-size: 32px; text-shadow: 0 0 18px #ff2a00, 0 0 6px #ff5a2a, 0 2px 3px #000; }
   #banner.fever .b-sub { color: #ffb08a; font-weight: 700; }
+  #foes { position: absolute; left: 50%; top: calc(env(safe-area-inset-top) + 10px); transform: translateX(-50%); pointer-events: none;
+    display: flex; align-items: center; gap: 6px; padding: 3px 14px 3px 8px; border-radius: 14px;
+    background: linear-gradient(#c8202a, #8a0e16); border: 2px solid #ff6a5a; box-shadow: 0 0 12px rgba(255, 58, 42, 0.6), 0 2px 4px #000; }
+  #foes .sk { font-size: 16px; line-height: 1; filter: drop-shadow(0 1px 1px #000); }
+  #foes b { font-size: 20px; font-weight: 900; color: #fff; min-width: 2ch; text-align: center; text-shadow: 0 1px 2px #000; }
+  #foes.bump b { animation: killBump 0.12s ease-out; }
   #fever { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 14px); transform: translateX(-50%); width: min(70%, 260px);
     text-align: center; pointer-events: none; }
   #fever-label { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: #ffb08a; text-shadow: 0 1px 2px #000; margin-bottom: 3px; }
@@ -214,6 +220,7 @@
       <button id="btn-pause" aria-label="pause">❚❚</button>
     </div>
   </div>
+  <div id="foes" class="hidden"><span class="sk">☠</span><b id="foes-n">0</b></div>
   <div id="fever" class="hidden"><div id="fever-label"></div><div class="bar"><div id="fever-fill"></div></div></div>
   <div id="boss" class="hidden"><div id="boss-name"></div><div class="bar"><div id="boss-fill"></div></div></div>
 

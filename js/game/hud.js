@@ -39,6 +39,19 @@ export class Hud {
       : state === 'on' ? t('fever') : hint ? `${t('fever_label')}：${t('fever_hint')}` : t('fever_label');
   }
 
+  /** 上の「残りのシロアリ」（null で隠す） */
+  foes(n) {
+    const el = $('foes');
+    if (n === null) { el.classList.add('hidden'); this.foesShown = -1; return; }
+    if (n === this.foesShown) return;
+    this.foesShown = n;
+    el.classList.remove('hidden');
+    $('foes-n').textContent = fmt(n);
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  }
+
   /** ランで集めた蜜（右上。入るたびにはねる） */
   honey(n) {
     const el = $('hud-honey');
@@ -56,7 +69,9 @@ export class Hud {
     if (this.killsShown < 0) {
       this.killsEl.classList.remove('hidden');
       $('hud-kills-l').textContent = t('kills_label');
-      this.killsShown = 0;
+      this.killsN.textContent = fmt(n);
+      this.killsShown = n;
+      return;
     }
     if (n === this.killsShown) return;
     this.killsShown = n;

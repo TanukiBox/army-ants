@@ -13,6 +13,7 @@ export class PixelView {
     this.app = app;
     this.targetW = opts.targetW ?? 380;     // 縦画面の横幅の目安（ドット）
     this.targetH = opts.targetH ?? 680;     // 横長の画面での高さの目安（ドット）
+    this.fit = opts.fit ?? 'round';         // 'floor' なら、どの画面でも targetW 以上の広さになる
     this.zoom = 1;
     this.bloom = opts.bloom ?? 0.5;         // ブルームの強さ（控えめ）
     this.world = new Container();
@@ -46,7 +47,8 @@ export class PixelView {
     this.app.canvas.style.height = cssH + 'px';
     this.cssW = cssW;
     this.cssH = cssH;
-    this.baseScale = Math.max(1, Math.round(Math.min(devW / this.targetW, devH / this.targetH)));
+    const ratio = Math.min(devW / this.targetW, devH / this.targetH);
+    this.baseScale = Math.max(1, this.fit === 'floor' ? Math.floor(ratio) : Math.round(ratio));
     this.scale = this.baseScale * this.zoom;
     this.W = Math.ceil(devW / this.scale);
     this.H = Math.ceil(devH / this.scale);

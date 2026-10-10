@@ -1,12 +1,14 @@
-// 作り直し（v2）の1ステージ：群れが前へ進み、迫ってくるシロアリの大群・卵・繭・看板などを撃ちながら、
-// 奥にある敵の巣を落とす（docs/redesign.md）。
-//   ・群れのアリがそれぞれ真っ直ぐ前へ撃つ。群れが大きいほど弾が多く、横にも広く当たる
-//   ・卵の山：撃ち割ると、生まれたアリが群れに加わる
-//   ・変異の繭：撃ち割ると変異する（武器が変わる／Lv が上がる）
-//   ・シロアリの大群：1発で1匹ずつ倒れる。群れに触れると1匹ずつ相殺
-//   ・＋の道（1枚ずつ増える）・−の看板（撃つと数字が上がる）・金の×2ゲート（たまに）
+// 1ステージ（参考動画に寄せた版）：少ない群れで前へ進み、撃って仲間と武器を手に入れながら、
+// ステージのシロアリを全部倒して奥の巣を落とす。
+//   ・群れのアリがそれぞれ前へ撃つ。弾1発で、的の数字がちょうど1ずつ減る
+//   ・卵の山：上にアリが乗っている。撃ち割ると、そのアリが1匹ずつ走ってきて仲間になる（+1）
+//   ・変異の繭：上に浮かぶアリの姿の能力に変わる（武器が変わる／Lv が上がる）
+//   ・クモの糸に捕らわれた兵隊アリ：撃って助けると、群れの先頭で強い針を撃ち続ける
+//   ・兵隊シロアリ：体力バー付き。列になって迫り、群れに着くと噛みついてアリを減らす
+//   ・働きシロアリの大群：1発で1匹。触れると1匹ずつ相殺
+//   ・＋の道（1枚ずつ+1）・−の看板（撃つと1ずつ上がる）
 //   ・ミイデラゴミムシ：赤い円で予告してから熱いガスを吹く
-//   ・敵の巣：決まった耐久。撃ち落とせばクリア
+//   ・上の「残り」：このステージのシロアリの数。0 にすると巣が落ちてクリア
 import { Container, Sprite, Graphics } from '../../vendor/pixi.min.mjs';
 import { CONFIG } from './config.js';
 import { t, fmt } from './i18n.js';
@@ -22,13 +24,20 @@ const GOOD = { fill: 0x10306a, edge: 0x3a8cff, text: 0x7ab8ff };
 const BAD = { fill: 0x6a1010, edge: 0xff3a2a, text: 0xff7a68 };
 const GOLD = { fill: 0x6a4a08, edge: 0xffd420, text: 0xffe070 };
 
-// シロアリを横に区切って探す（弾・群れとの当たりを速く調べるため）
-const BUCKET = 8;
+// 働きシロアリを横に区切って探す（弾・群れとの当たりを速く調べるため）
+const BUCKET = 6;
 const NB = Math.ceil((CONFIG.track.width + 120) / BUCKET);
 const bucketOf = (x) => Math.max(0, Math.min(NB - 1, Math.floor((x + HALF + 60) / BUCKET)));
 
+const anchorOf = (s, sheet) => s.anchor.set(sheet.anchor[0] / sheet.cell[0], sheet.anchor[1] / sheet.cell[1]);
+
+/** 大群・兵隊シロアリの数（侵攻度で増える） */
+export function foeCount(n, run) {
+  return Math.max(1, Math.round(n * inv(run, 'enemyPer')));
+}
+
 // =============================================================================
-// シロアリの大群
+// 働きシロアリの大群（1発で1匹。まっすぐ進む）
 // =============================================================================
 class Horde {
   constructor(lane, ev, y) {
@@ -36,20 +45,19 @@ class Horde {
     this.x = ev.x;
     this.y = y;            // いちばん手前の列の位置。後ろの列ほど奥（上）に並ぶ
     const H = CONFIG.horde;
-    const n = Math.max(1, Math.round(ev.n * inv(lane.G.run, 'enemyPer')));
+    const n = ev.exact ? ev.n : foeCount(ev.n, lane.G.run);   // exact：巣から出る分（数は巣で決め済み）
     this.n0 = n;
+    this.speedMul = ev.speedMul ?? 1;
     const sp = H.spacing;
-    const w = Math.max(sp, Math.min(ev.w ?? Math.sqrt(n) * sp * 1.3, CONFIG.track.width - 16));
+    const w = Math.max(sp, Math.min(ev.w ?? Math.sqrt(n) * sp * 1.3, CONFIG.track.width - 10));
     const cols = Math.max(1, Math.round(w / sp));
-    const P = lane.S.props;
+    const sheet = lane.S.props.termite_worker;
     this.units = [];
     for (let i = 0; i < n; i++) {
       const c = i % cols, r = Math.floor(i / cols);
       const inRow = Math.min(cols, n - r * cols);
-      const soldier = i % H.soldierEvery === H.soldierEvery - 1;
-      const sheet = soldier ? P.termite_soldier : P.termite_worker;
       const s = new Sprite(sheet.anims.walk[0]);
-      s.anchor.set(sheet.anchor[0] / sheet.cell[0], sheet.anchor[1] / sheet.cell[1]);
+      anchorOf(s, sheet);
       lane.swarm.layer.addChild(s);
       // 暗い地面で見えるよう、同じ絵をうすく光らせて重ねる
       const lit = new Sprite(sheet.anims.walk[0]);
@@ -57,11 +65,12 @@ class Horde {
       lit.tint = H.litColor;
       lit.alpha = H.litAlpha;
       lane.glow.addChild(lit);
-      this.units.push({ lit,
-        ox: (c - (inRow - 1) / 2) * sp + (Math.random() - 0.5) * 3,
-        oy: -r * sp * 0.9 + (Math.random() - 0.5) * 3,
-        x: this.x, y: this.y, hp: soldier ? H.soldierHp : H.workerHp, soldier, s, sheet,
-        ph: Math.random() * 6.28, poison: 0, poisoned: false, dead: false, horde: this,
+      this.units.push({
+        s, lit, sheet,
+        ox: (c - (inRow - 1) / 2) * sp + (Math.random() - 0.5) * 2,
+        oy: -r * sp * 0.9 + (Math.random() - 0.5) * 2,
+        x: this.x, y: this.y, hp: H.workerHp, ph: Math.random() * 6.28,
+        poison: 0, poisoned: false, dead: false, horde: this,
       });
     }
     this.back = Math.min(...this.units.map((u) => u.oy));
@@ -74,8 +83,8 @@ class Horde {
 
   update(dt) {
     const H = CONFIG.horde;
-    this.y += H.speed * dt;
-    this.walk += (H.speed + this.lane.swarm.speed) * dt;
+    this.y += H.speed * this.speedMul * dt;
+    this.walk += (H.speed * this.speedMul + this.lane.swarm.speed) * dt;
     for (const u of this.units) {
       if (u.dead) {
         // 倒れたシロアリは、その場に少し残って消える
@@ -85,7 +94,7 @@ class Horde {
         }
         continue;
       }
-      u.x = Math.max(-HALF + 4, Math.min(HALF - 4, this.x + u.ox + Math.sin(this.walk * 0.05 + u.ph) * H.wobble));
+      u.x = Math.max(-HALF + 3, Math.min(HALF - 3, this.x + u.ox + Math.sin(this.walk * 0.05 + u.ph) * H.wobble));
       u.y = this.y + u.oy;
       u.s.position.set(Math.round(u.x), Math.round(u.y));
       u.s.zIndex = u.y;
@@ -113,7 +122,129 @@ class Horde {
 }
 
 // =============================================================================
-// 卵の山（撃ち割ると、生まれたアリが群れに加わる）
+// 兵隊シロアリ（体力バー付き。群れに近づくと寄ってきて、着くと噛みつく）
+// =============================================================================
+class Soldier {
+  constructor(lane, x, y, hp, speedMul = 1) {
+    this.lane = lane;
+    this.x = x;
+    this.y = y;
+    this.speedMul = speedMul;
+    this.hp = this.hp0 = hp;
+    this.r = CONFIG.soldier.radius;
+    this.sheet = lane.S.props.termite_soldier;
+    this.s = new Sprite(this.sheet.anims.walk[0]);
+    anchorOf(this.s, this.sheet);
+    lane.swarm.layer.addChild(this.s);
+    this.lit = new Sprite(this.sheet.anims.walk[0]);
+    this.lit.anchor.copyFrom(this.s.anchor);
+    this.lit.tint = CONFIG.soldier.litColor;
+    this.lit.alpha = CONFIG.soldier.litAlpha;
+    lane.glow.addChild(this.lit);
+    this.bar = new Graphics();
+    lane.top.addChild(this.bar);
+    this.engaged = false;
+    this.ox = 0;
+    this.biteT = 0.25;
+    this.walk = Math.random() * 10;
+    this.ph = Math.random() * 6;
+    this.poison = 0;
+    this.hurtT = 0;
+    this.dead = false;
+    this.corpse = 0;
+  }
+
+  damage(d, kind) {
+    if (this.dead) return;
+    this.hp -= d;
+    this.hurtT = 0.07;
+    if (kind === 'venom') this.poison += CONFIG.arms.fire.dot[0] * this.lane.G.run.mods.poisonMul;
+    if (this.hp <= 0) this.die('shot');
+  }
+
+  die(cause) {
+    if (this.dead) return;
+    this.dead = true;
+    this.corpse = CONFIG.horde.corpse;
+    const lane = this.lane, fx = lane.fx;
+    fx.burst(fx.glow, this.x, this.y - 4, 6, { color: [0xfff4e0, 0xffe0b0], speed: [20, 60], life: [0.15, 0.3], drag: 6 });
+    fx.burst(fx.over, this.x, this.y - 2, 9, { color: [0xd8c0a0, 0x8a7048, 0x6a5538, 0x3a2a20], speed: [30, 90], life: [0.25, 0.55], drag: 5, size: 2 });
+    this.s.tint = 0x5a4836;
+    this.lit.alpha = 0;
+    this.bar.clear();
+    lane.foeDown(1);
+    if (cause !== 'flee') lane.countKill(this.x, this.y, true);
+  }
+
+  update(dt) {
+    const lane = this.lane, sw = lane.swarm, S = CONFIG.soldier;
+    if (this.dead) {
+      this.corpse -= dt;
+      this.s.alpha = Math.max(0, Math.min(0.85, this.corpse / 0.5));
+      return;
+    }
+    if (this.poison > 0) {
+      const p = Math.min(this.poison, dt * 2);
+      this.poison -= p;
+      this.hp -= p;
+      if (this.hp <= 0) { this.die('shot'); return; }
+    }
+    if (!this.engaged) {
+      this.y += S.speed * this.speedMul * dt;
+      // 近づくと、群れのほうへ寄ってくる
+      const dy = sw.y - this.y;
+      if (dy > 0 && dy < S.homeRange && sw.count > 0) {
+        const want = sw.x - this.x, step = S.homeSpeed * dt;
+        this.x += Math.max(-step, Math.min(step, want));
+      }
+      const ex = (this.x - sw.x) / (sw.rx + this.r), ey = (this.y - sw.y) / (sw.ry + this.r);
+      if (sw.count > 0 && ex * ex + ey * ey < 1) {
+        if (lane.feverT > 0) { this.die('trample'); return; }   // 大暴れ中は踏みつぶす
+        this.engaged = true;
+        this.ox = Math.max(-sw.rx, Math.min(sw.rx, this.x - sw.x));
+        sfx.hurt();
+      }
+    } else {
+      // 群れの先頭に食らいついて噛む
+      if (lane.feverT > 0) { this.die('trample'); return; }
+      if (sw.count <= 0) { this.engaged = false; return; }
+      this.x += (sw.x + this.ox - this.x) * Math.min(1, dt * 8);
+      this.y += (sw.y - sw.ry * 0.6 - this.y) * Math.min(1, dt * 8);
+      this.biteT -= dt;
+      if (this.biteT <= 0) {
+        this.biteT = S.biteEvery;
+        const run = lane.G.run;
+        const chance = (1 - CONFIG.armor.reduce[run.armor]) * run.mods.dmgTaken * inv(run, 'hitPer');
+        if (Math.random() < chance) lane.loseAnts(1, { at: { x: this.x, y: this.y }, why: 'bite' });
+        lane.fx.burst(lane.fx.glow, this.x, this.y + 4, 4, { color: [0xff5a3a, 0xffffff], speed: [20, 50], life: [0.1, 0.2], drag: 6 });
+        sfx.snap();
+      }
+    }
+    this.walk += (S.speed + sw.speed) * dt;
+    const fr = this.sheet.anims.walk;
+    const px = Math.round(this.x), py = Math.round(this.y);
+    this.s.texture = this.lit.texture = fr[Math.floor(this.walk / 2 + this.ph) % fr.length];
+    this.s.position.set(px, py);
+    this.lit.position.set(px, py);
+    this.s.zIndex = py;
+    this.s.tint = this.hurtT > 0 ? 0xffc0b0 : this.poison > 0 ? 0xa8ff90 : 0xffffff;
+    this.hurtT -= dt;
+    // 体力バー
+    const b = this.bar, w = 14;
+    b.clear();
+    b.rect(px - w / 2 - 1, py - 21, w + 2, 4).fill({ color: 0x0a0406 });
+    b.rect(px - w / 2, py - 20, Math.max(0, Math.round(w * this.hp / this.hp0)), 2).fill({ color: 0xff4a30 });
+  }
+
+  destroy() {
+    this.s.destroy();
+    this.lit.destroy();
+    this.bar.destroy();
+  }
+}
+
+// =============================================================================
+// 卵の山（上にアリが乗っている。撃ち割ると、そのアリが走ってきて仲間になる）
 // =============================================================================
 class Egg {
   constructor(lane, ev, y) {
@@ -129,24 +260,31 @@ class Egg {
     lane.swarm.layer.addChild(this.g);
     this.gl = new Graphics();
     lane.glow.addChild(this.gl);
-    // 卵の並び（数が多いほど山が大きい）
-    const k = Math.min(12, 5 + Math.floor(this.reward / 3));
+    // 卵の並び
+    const k = 9;
     this.eggs = [];
     for (let i = 0; i < k; i++) {
-      const a = i * 2.39996, rr = 14 * Math.sqrt((i + 0.5) / k);
-      this.eggs.push({ x: Math.round(Math.cos(a) * rr * 1.3), y: Math.round(Math.sin(a) * rr * 0.6) - 6 });
+      const a = i * 2.39996, rr = 11 * Math.sqrt((i + 0.5) / k);
+      this.eggs.push({ x: Math.round(Math.cos(a) * rr * 1.35), y: Math.round(Math.sin(a) * rr * 0.55) - 5 });
     }
     this.eggs.sort((p, q) => p.y - q.y);
+    // 上に乗っているアリ（まだ仲間ではないので色はうすい）
+    const V = lane.S.ants.base;
+    this.riders = [];
+    const show = Math.min(this.reward, CONFIG.egg.showMax);
+    for (let i = 0; i < show; i++) {
+      const s = new Sprite(V.color[4][0]);
+      s.anchor.set(0.5);
+      s.tint = 0xd8c8b0;
+      lane.top.addChild(s);
+      const row = i < 3 ? 0 : 1, col = row === 0 ? i : i - 3, inRow = row === 0 ? Math.min(3, show) : show - 3;
+      this.riders.push({ s, dx: (col - (inRow - 1) / 2) * 9, dy: -16 - row * 7, ph: Math.random() * 6 });
+    }
     this.hpLabel = new PixelText(String(this.hp), 2);
     lane.top.addChild(this.hpLabel);
-    // ごほうびは割る前から見えている：「+8」と小さなアリ
-    this.rewardLabel = new PixelText('+' + this.reward, 2);
+    this.rewardLabel = new PixelText('+' + this.reward, 1);
     this.rewardLabel.tint = 0xb8ffb0;
     lane.top.addChild(this.rewardLabel);
-    const V = lane.S.ants[lane.swarm.variant] || lane.S.ants.base;
-    this.icon = new Sprite(V.color[4][0]);
-    this.icon.anchor.set(0.5);
-    lane.top.addChild(this.icon);
     this.hurt = 0;
     this.kick = 0;
     this.t = Math.random() * 6;
@@ -156,24 +294,22 @@ class Egg {
   draw() {
     const g = this.g, x = this.x, y = Math.round(this.y);
     g.clear();
-    g.ellipse(x, y + 2, 22, 8).fill({ color: 0x000000, alpha: 0.4 });
+    g.ellipse(x, y + 2, 17, 6).fill({ color: 0x000000, alpha: 0.4 });
     const show = Math.max(1, Math.ceil(this.eggs.length * this.hp / this.hp0));
     const white = this.hurt > 0;
     for (let i = 0; i < this.eggs.length; i++) {
       const e = this.eggs[i];
       const ex = x + e.x, ey = y + e.y;
       if (i >= show) {   // 割れた卵：殻だけ
-        g.ellipse(ex, ey + 2, 4, 2).fill({ color: 0x6a5a40 });
+        g.ellipse(ex, ey + 2, 3, 2).fill({ color: 0x6a5a40 });
         continue;
       }
-      g.ellipse(ex, ey, 5, 7).fill({ color: white ? 0xffffff : 0xe6d8b4 }).stroke({ width: 1, color: 0x2a2018 });
-      g.ellipse(ex + 1, ey + 2, 3, 4).fill({ color: white ? 0xffffff : 0xc8b890 });
-      g.rect(ex - 2, ey - 4, 2, 3).fill({ color: 0xfffaf0 });
+      g.ellipse(ex, ey, 4, 5.5).fill({ color: white ? 0xffffff : 0xe6d8b4 }).stroke({ width: 1, color: 0x2a2018 });
+      g.ellipse(ex + 1, ey + 2, 2, 3).fill({ color: white ? 0xffffff : 0xc8b890 });
+      g.rect(ex - 2, ey - 3, 1, 2).fill({ color: 0xfffaf0 });
     }
     this.hpLabel.setText(String(Math.max(1, Math.ceil(this.hp))));
-    this.hpLabel.position.set(x, y + 4);
-    this.rewardLabel.position.set(x + 8, y - 30);
-    this.icon.position.set(x - 16, y - 28);
+    this.hpLabel.position.set(x, y + 6);
   }
 
   damage(d) {
@@ -184,7 +320,7 @@ class Egg {
     sfx.cocoonHit();
     if (Math.random() < 0.5) {
       const fx = this.lane.fx;
-      fx.burst(fx.over, this.x + (Math.random() - 0.5) * 16, this.y - 8, 2, { color: [0xfffaf0, 0xe6d8b4], speed: [20, 60], life: [0.15, 0.3], drag: 5 });
+      fx.burst(fx.over, this.x + (Math.random() - 0.5) * 14, this.y - 6, 2, { color: [0xfffaf0, 0xe6d8b4], speed: [20, 60], life: [0.15, 0.3], drag: 5 });
     }
     if (this.hp <= 0) this.hatch();
     else this.draw();
@@ -193,21 +329,27 @@ class Egg {
   hatch() {
     this.state = 'gone';
     const lane = this.lane, fx = lane.fx;
-    fx.burst(fx.over, this.x, this.y - 4, 26, { color: [0xe6d8b4, 0xfffaf0, 0xb8a888], speed: [40, 130], life: [0.3, 0.7], drag: 4, size: 2 });
-    fx.burst(fx.glow, this.x, this.y - 6, 14, { color: [0xb8ffb0, 0xffffff], speed: [30, 90], life: [0.2, 0.45], drag: 5, size: 2 });
-    fx.ring(fx.glow, this.x, this.y - 4, 3, 26, 0.35, 0xb8ffb0, 0.9);
-    fx.ring(fx.glow, this.x, this.y - 4, 2, 14, 0.2, 0xffffff, 0.9);
-    const got = lane.gain(this.reward, { x: this.x, y: this.y - 4 }, 'egg');
-    lane.G.popupNum(this.x, this.y - 22, '+' + got, 0xb8ffb0);
+    fx.burst(fx.over, this.x, this.y - 4, 24, { color: [0xe6d8b4, 0xfffaf0, 0xb8a888], speed: [40, 130], life: [0.3, 0.7], drag: 4, size: 2 });
+    fx.burst(fx.glow, this.x, this.y - 6, 14, { color: [0xffe080, 0xffffff], speed: [30, 90], life: [0.2, 0.45], drag: 5, size: 2 });
+    fx.ring(fx.glow, this.x, this.y - 4, 3, 24, 0.35, 0xffe080, 0.9);
     lane.G.view.shake(CONFIG.feel.shakeSmall);
     sfx.hatch();
+    // 乗っていたアリが1匹ずつ走ってきて仲間になる（乗せきれない分は卵から出てくる）
+    for (let i = 0; i < this.reward; i++) {
+      const r = this.riders[i];
+      const x = r ? this.x + r.dx : this.x + (Math.random() - 0.5) * 20;
+      const y = r ? this.y + r.dy : this.y - 4;
+      lane.addRunner(x, y, i * CONFIG.egg.runnerGap);
+    }
     this.remove();
   }
 
   update(dt) {
     if (this.state === 'passed') {
       this.fade -= dt;
-      for (const s of [this.g, this.hpLabel, this.rewardLabel, this.icon]) s.alpha = Math.max(0, this.fade * 2);
+      const a = Math.max(0, this.fade * 2);
+      for (const s of [this.g, this.hpLabel, this.rewardLabel]) s.alpha = a;
+      for (const r of this.riders) r.s.alpha = a;
       if (this.fade <= 0) this.remove();
       return;
     }
@@ -216,11 +358,18 @@ class Egg {
     if (this.hurt > 0) { this.hurt -= dt; if (this.hurt <= 0) this.draw(); }
     // 当たるとゆれる・数字がはねる
     this.kick -= dt;
-    this.g.position.x = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    const kx = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    this.g.position.x = kx;
     this.hpLabel.scale.set(this.kick > 0.04 ? 3 : 2);
+    const y = Math.round(this.y);
+    for (const r of this.riders) {
+      r.s.position.set(Math.round(this.x + r.dx + kx), y + r.dy + Math.round(Math.sin(this.t * 3 + r.ph)));
+      r.s.zIndex = y;
+    }
+    this.rewardLabel.position.set(this.x, y - 30);
     const gl = this.gl;
     gl.clear();
-    gl.ellipse(this.x, Math.round(this.y) - 6, 22, 13).fill({ color: 0xfff0b0, alpha: 0.12 + 0.06 * Math.sin(this.t * 3) });
+    gl.ellipse(this.x, y - 5, 18, 10).fill({ color: 0xfff0b0, alpha: 0.1 + 0.05 * Math.sin(this.t * 3) });
     const sw = this.lane.swarm;
     if (sw.y < this.y + 2) {   // 割れないまま追いついた → 素通り
       this.state = 'passed';
@@ -230,7 +379,9 @@ class Egg {
 
   remove() {
     if (this.state === 'dead') return;
-    for (const s of [this.g, this.gl, this.hpLabel, this.rewardLabel, this.icon]) s.destroy();
+    for (const s of [this.g, this.gl, this.hpLabel, this.rewardLabel]) s.destroy();
+    for (const r of this.riders) r.s.destroy();
+    this.riders = [];
     this.state = 'dead';
   }
 }
@@ -250,7 +401,7 @@ class Cocoon {
     const sh = lane.S.props.cocoon;
     this.sheet = sh;
     this.spr = new Sprite(sh.anims.stage[0]);
-    this.spr.anchor.set(sh.anchor[0] / sh.cell[0], sh.anchor[1] / sh.cell[1]);
+    anchorOf(this.spr, sh);
     this.spr.position.set(this.x, Math.round(y));
     this.spr.zIndex = y;
     lane.swarm.layer.addChild(this.spr);
@@ -259,22 +410,20 @@ class Cocoon {
     this.light.position.copyFrom(this.spr.position);
     this.light.tint = MUT_COLOR[this.mut];
     lane.glow.addChild(this.light);
-    // 中にいるアリの姿（2倍）と、その下の光る輪
+    // 中にいるアリの姿と、その下の光る輪（武器が乗っている台のように）
     const vn = this.mut === 'armor' ? 'armor1' : `${this.mut}1`;
     const V = lane.S.ants[vn];
     this.ring = new Graphics();
     lane.glow.addChild(this.ring);
     this.icon = new Sprite(V.color[4][0]);
     this.icon.anchor.set(0.5);
-    this.icon.scale.set(2);
     this.icon.position.set(this.x, Math.round(y) + CONFIG.cocoon.iconY);
     this.iconGlow = new Sprite(V.glow[4][0]);
     this.iconGlow.anchor.set(0.5);
-    this.iconGlow.scale.set(2);
     this.iconGlow.position.copyFrom(this.icon.position);
     lane.top.addChild(this.icon);
     lane.glow.addChild(this.iconGlow);
-    this.label = new PixelText(String(this.hp), 1);
+    this.label = new PixelText(String(this.hp), 2);
     this.label.position.set(this.x, Math.round(y) + CONFIG.cocoon.hpY);
     lane.top.addChild(this.label);
     this.el = document.createElement('div');
@@ -292,14 +441,14 @@ class Cocoon {
     const key = p.how + p.lv;
     if (key !== this.elKey) {
       this.elKey = key;
-      this.el.innerHTML = `<b>${t('mut_' + this.mut)}</b><i>${t('mut_role_' + this.mut)}</i><span class="${p.how}">${t('cocoon_' + p.how, { n: p.lv })}</span>`;
+      this.el.innerHTML = `<b>${t('mut_' + this.mut)}</b><span class="${p.how}">${t('cocoon_' + p.how, { n: p.lv })}</span>`;
     }
     const G = this.f.G;
     const q = G.worldToCss(this.x, this.y + CONFIG.cocoon.labelY);
     const m = 46;
     this.el.style.left = Math.max(m, Math.min(G.view.cssW - m, q.x)) + 'px';
     this.el.style.top = q.y + 'px';
-    if (this.state === 'alive') this.el.style.opacity = String(Math.max(0, Math.min(1, (q.y - 70) / 50)));   // 上のバーと重ならないように
+    if (this.state === 'alive') this.el.style.opacity = String(Math.max(0, Math.min(1, (q.y - 70) / 50)));   // 上の表示と重ならないように
   }
 
   damage(d) {
@@ -337,7 +486,6 @@ class Cocoon {
     const lane = this.f, sw = lane.swarm, mcol = MUT_COLOR[this.mut];
     const fly = new Sprite(this.icon.texture);
     fly.anchor.set(0.5);
-    fly.scale.set(2);
     fly.position.copyFrom(this.icon.position);
     lane.top.addChild(fly);
     const x0 = fly.x, y0 = fly.y;
@@ -345,10 +493,10 @@ class Cocoon {
     lane.fx.anims.push({ update: (dt) => {
       tt += dt;
       const p = Math.min(1, tt / 0.32), e = p * p;
-      fly.position.set(Math.round(x0 + (sw.x - x0) * e), Math.round(y0 + (sw.y - y0) * e - Math.sin(p * Math.PI) * 26));
+      fly.position.set(Math.round(x0 + (sw.x - x0) * e), Math.round(y0 + (sw.y - y0) * e - Math.sin(p * Math.PI) * 20));
       if (p < 1) return true;
       fly.destroy();
-      lane.fx.ring(lane.fx.glow, sw.x, sw.y, 4, 34, 0.45, mcol, 1);
+      lane.fx.ring(lane.fx.glow, sw.x, sw.y, 4, 30, 0.45, mcol, 1);
       lane.fx.burst(lane.fx.glow, sw.x, sw.y, 20, { color: [mcol, 0xffffff], speed: [40, 120], life: [0.2, 0.5], drag: 4, size: 2 });
       return false;
     } });
@@ -372,13 +520,13 @@ class Cocoon {
     this.kick = (this.kick || 0) - dt;
     const kx = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
     this.spr.position.x = this.light.position.x = this.x + kx;
-    this.label.scale.set(this.kick > 0.04 ? 2 : 1);
+    this.label.scale.set(this.kick > 0.04 ? 3 : 2);
     // 中のアリがふわふわ浮く
     const bob = Math.round(Math.sin(this.t * 2.4) * 2);
     this.icon.position.y = Math.round(this.y) + CONFIG.cocoon.iconY + bob;
     this.iconGlow.position.y = this.icon.position.y;
     this.ring.clear();
-    this.ring.ellipse(this.x, Math.round(this.y) + CONFIG.cocoon.iconY + 16, 13, 4).stroke({ width: 1, color: MUT_COLOR[this.mut], alpha: 0.5 + 0.4 * Math.sin(this.t * 4) });
+    this.ring.ellipse(this.x, Math.round(this.y) + CONFIG.cocoon.iconY + 9, 9, 3).stroke({ width: 1, color: 0xffd040, alpha: 0.6 + 0.4 * Math.sin(this.t * 4) });
     this.place();
     if (this.f.swarm.y < this.y + 4) {
       this.state = 'passed';
@@ -396,6 +544,104 @@ class Cocoon {
 }
 
 // =============================================================================
+// クモの糸に捕らわれた兵隊アリ（撃って助けると、群れの先頭で戦う仲間になる）
+// =============================================================================
+class Cage {
+  constructor(lane, ev, y) {
+    this.lane = lane;
+    this.x = ev.x;
+    this.y = y;
+    this.hp = this.hp0 = ev.hp;
+    this.r = CONFIG.cage.radius;
+    this.state = 'alive';
+    const V = lane.S.ants[CONFIG.hero.variant];
+    this.ant = new Sprite(V.color[4][0]);
+    this.ant.anchor.set(0.5);
+    this.ant.scale.set(2);
+    this.ant.tint = 0x9a90a0;
+    this.ant.position.set(this.x, Math.round(y) - 14);
+    this.ant.zIndex = y;
+    lane.swarm.layer.addChild(this.ant);
+    this.web = new Graphics();
+    this.web.zIndex = y + 1;
+    lane.swarm.layer.addChild(this.web);
+    this.label = new PixelText(String(this.hp), 2);
+    this.label.tint = 0xe8e0ff;
+    lane.top.addChild(this.label);
+    this.kick = 0;
+    this.t = 0;
+    this.drawWeb();
+  }
+
+  drawWeb() {
+    const g = this.web, x = this.x, y = Math.round(this.y) - 14;
+    const k = this.hp / this.hp0;
+    g.clear();
+    g.ellipse(x, y + 16, 18, 5).fill({ color: 0x000000, alpha: 0.35 });
+    const strands = Math.max(2, Math.round(10 * k));
+    for (let i = 0; i < strands; i++) {
+      const a = (i / 10) * Math.PI;
+      g.moveTo(x + Math.cos(a) * 17, y + Math.sin(a) * 18 - 2).lineTo(x - Math.cos(a) * 17, y - Math.sin(a) * 18 + 2);
+    }
+    g.stroke({ width: 1, color: 0xe8e8f0, alpha: 0.75 });
+    g.ellipse(x, y, 16 * (0.6 + 0.4 * k), 18 * (0.6 + 0.4 * k)).stroke({ width: 1, color: 0xffffff, alpha: 0.5 });
+    this.label.setText(String(Math.max(1, Math.ceil(this.hp))));
+    this.label.position.set(x, y + 26);
+  }
+
+  damage(d) {
+    if (this.state !== 'alive') return;
+    this.hp -= d;
+    this.kick = 0.06;
+    sfx.cocoonHit();
+    if (Math.random() < 0.4) {
+      const fx = this.lane.fx;
+      fx.burst(fx.over, this.x + (Math.random() - 0.5) * 24, this.y - 16, 2, { color: [0xffffff, 0xd8d8e8], speed: [20, 60], life: [0.2, 0.4], drag: 4 });
+    }
+    if (this.hp <= 0) this.free();
+    else this.drawWeb();
+  }
+
+  free() {
+    this.state = 'gone';
+    const lane = this.lane, fx = lane.fx;
+    fx.burst(fx.over, this.x, this.y - 14, 30, { color: [0xffffff, 0xe0e0f0, 0xb8b8c8], speed: [40, 140], life: [0.3, 0.8], drag: 3, size: 2 });
+    fx.ring(fx.glow, this.x, this.y - 14, 4, 34, 0.5, 0xffe080, 1);
+    lane.G.hitstop();
+    lane.G.view.shake(2.5);
+    sfx.cocoonBreak();
+    lane.addHero(this.x, this.y - 14);
+    this.remove();
+  }
+
+  update(dt) {
+    if (this.state === 'passed') {
+      this.fade -= dt;
+      for (const s of [this.ant, this.web, this.label]) s.alpha = Math.max(0, this.fade * 2);
+      if (this.fade <= 0) this.remove();
+      return;
+    }
+    if (this.state !== 'alive') return;
+    this.t += dt;
+    this.kick -= dt;
+    const kx = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    this.web.position.x = kx;
+    this.ant.position.x = this.x + kx;
+    this.label.scale.set(this.kick > 0.03 ? 3 : 2);
+    if (this.lane.swarm.y < this.y + 2) {
+      this.state = 'passed';
+      this.fade = 0.4;
+    }
+  }
+
+  remove() {
+    if (this.state === 'dead') return;
+    for (const s of [this.ant, this.web, this.label]) s.destroy();
+    this.state = 'dead';
+  }
+}
+
+// =============================================================================
 // 板（−の看板・＋の道の1枚・金の×2ゲート）。群れが触れると効く
 // =============================================================================
 class Panel {
@@ -406,7 +652,7 @@ class Panel {
     this.x = x;
     this.y = y;
     this.w = w;
-    this.h = kind === 'plus' ? 12 : 16;
+    this.h = kind === 'plus' ? 10 : 14;
     this.v = this.v0 = v;
     this.hits = 0;
     this.cap = kind === 'board' ? Math.max(1, Math.round(Math.abs(v) * CONFIG.board.capRatio)) : v;
@@ -437,7 +683,7 @@ class Panel {
     const x0 = Math.round(this.x - this.w / 2), y0 = Math.round(this.y - this.h / 2);
     g.clear();
     gl.clear();
-    g.rect(x0, y0, this.w, this.h).fill({ color: c.fill, alpha: this.kind === 'gold' ? 0.55 : 0.4 });
+    g.rect(x0, y0, this.w, this.h).fill({ color: c.fill, alpha: this.kind === 'gold' ? 0.55 : 0.45 });
     g.rect(x0 - 1, y0 - 3, 2, this.h + 5).fill({ color: 0x0a0608 });
     g.rect(x0 + this.w - 1, y0 - 3, 2, this.h + 5).fill({ color: 0x0a0608 });
     gl.rect(x0, y0, this.w, 1).fill({ color: c.edge, alpha: 0.95 });
@@ -451,15 +697,15 @@ class Panel {
     this.label.position.set(Math.round(this.x), Math.round(this.y + this.h / 2) - 2);
   }
 
-  /** −の看板を撃った：数字が上がる */
+  /** −の看板を撃った：数字が1ずつ上がる */
   hit(power = 1) {
     if (this.kind !== 'board' || this.used || this.v >= this.cap) return false;
     this.hits += power;
     if (this.hits >= CONFIG.board.hitsPerStep) {
       this.hits = 0;
-      this.v = Math.min(this.cap, this.v + Math.max(1, Math.round(Math.abs(this.v0) / 10)));
+      this.v = Math.min(this.cap, this.v + 1);
       if (this.v === 0) this.v = 1;
-      this.bump = 0.12;
+      this.bump = 0.08;
       this.draw();
     }
     return true;
@@ -509,7 +755,7 @@ class Beetle {
     this.sheet = lane.S.props.beetle;
     const sh = this.sheet;
     this.spr = new Sprite(sh.anims.walk[0]);
-    this.spr.anchor.set(sh.anchor[0] / sh.cell[0], sh.anchor[1] / sh.cell[1]);
+    anchorOf(this.spr, sh);
     lane.swarm.layer.addChild(this.spr);
     this.gl = new Sprite(sh.glow?.walk[0] ?? sh.anims.walk[0]);
     this.gl.anchor.copyFrom(this.spr.anchor);
@@ -521,6 +767,7 @@ class Beetle {
     this.shootT = 0;
     this.walk = 0;
     this.hurtT = 0;
+    this.counted = false;
   }
 
   get dead() { return this.hp <= 0; }
@@ -535,8 +782,10 @@ class Beetle {
 
   die() {
     this.hp = 0;
-    this.lane.honey(CONFIG.honey.beetle, this.x, this.y);
-    const fx = this.lane.fx;
+    const lane = this.lane;
+    lane.honey(CONFIG.honey.beetle, this.x, this.y);
+    if (!this.counted) { this.counted = true; lane.foeDown(1); lane.countKill(this.x, this.y, true); }
+    const fx = lane.fx;
     fx.burst(fx.glow, this.x, this.y, 18, { color: [FXC.ember, FXC.orange, 0xffffff], speed: [30, 100], life: [0.2, 0.5], drag: 5, size: 2 });
     fx.burst(fx.over, this.x, this.y, 14, { color: [0x36220c, 0x0f090b, 0x553410], speed: [30, 90], life: [0.3, 0.7], drag: 4, size: 2 });
     fx.blot(fx.under, this.x, this.y + 2, 8, 0x07050a, 0.6, 2);
@@ -545,7 +794,7 @@ class Beetle {
 
   update(dt) {
     const lane = this.lane, sw = lane.swarm, Gs = CONFIG.gas;
-    this.y += 8 * dt;
+    this.y += 6 * dt;
     if (this.poison > 0) {
       const p = Math.min(this.poison, dt * 3);
       this.poison -= p;
@@ -590,9 +839,9 @@ class Beetle {
     this.spr.tint = this.hurtT > 0 ? 0xffb0a0 : 0xffffff;
     this.hurtT -= dt;
     this.bar.clear();
-    const w = 22;
-    this.bar.rect(px - w / 2, py - 26, w, 2).fill({ color: 0x1a0c10 });
-    this.bar.rect(px - w / 2, py - 26, Math.max(0, w * this.hp / this.hp0), 2).fill({ color: 0xff5a3a });
+    const w = 20;
+    this.bar.rect(px - w / 2 - 1, py - 27, w + 2, 4).fill({ color: 0x0a0406 });
+    this.bar.rect(px - w / 2, py - 26, Math.max(0, Math.round(w * this.hp / this.hp0)), 2).fill({ color: 0xff5a3a });
   }
 
   destroy() {
@@ -603,91 +852,67 @@ class Beetle {
 }
 
 // =============================================================================
-// 敵の巣（ステージのゴール）
+// 敵の巣（奥で待つ。群れが着くと、残りのシロアリを送り出す。全部倒すと落ちる）
 // =============================================================================
 class Nest {
   constructor(lane, ev, y) {
     this.lane = lane;
     this.x = 0;
     this.y = y;
-    const N = CONFIG.nest;
-    this.hp = this.hp0 = Math.round(ev.hp * (1 + (lane.G.run.invasion || 0) * N.hpPerInvasion));
-    this.appearT = lane.time;
-    this.spawnT = 1.2;
+    const run = lane.G.run;
+    this.soldiers = foeCount(ev.soldiers ?? 0, run);
+    this.workers = ev.workers ? foeCount(ev.workers, run) : 0;
+    this.soldierHp = ev.soldierHp ?? 4;
+    this.total = this.soldiers + this.workers;
+    this.waveT = 0.5;
+    this.flip = false;
     this.state = 'alive';
     const ms = lane.S.props.termite_mound;
     this.sheet = ms;
     this.spr = new Sprite(ms.anims.damage[0]);
-    this.spr.anchor.set(ms.anchor[0] / ms.cell[0], ms.anchor[1] / ms.cell[1]);
-    this.spr.scale.set(N.scale);
+    anchorOf(this.spr, ms);
     this.spr.position.set(0, Math.round(y));
     this.spr.zIndex = y;
     lane.swarm.layer.addChild(this.spr);
     this.gl = new Sprite(ms.glow ? ms.glow.damage[0] : ms.anims.damage[0]);
     this.gl.anchor.copyFrom(this.spr.anchor);
-    this.gl.scale.set(N.scale);
     this.gl.position.copyFrom(this.spr.position);
     this.gl.visible = !!ms.glow;
     lane.glow.addChild(this.gl);
-    this.label = new PixelText(formatCount(this.hp), 3);
-    this.label.tint = 0xffb08a;
-    this.label.position.set(0, Math.round(y) - N.hitH - 8);
-    lane.top.addChild(this.label);
-    this.hurt = 0;
   }
 
-  hitTest(x, y) {
-    return this.state === 'alive' && Math.abs(x - this.x) < CONFIG.nest.hitW && y < this.y - 6 && y > this.y - CONFIG.nest.hitH;
-  }
-
-  damage(d) {
-    if (this.state !== 'alive') return;
-    this.hp -= d;
-    this.hurt = 0.05;
-    this.kick = 0.06;
-    sfx.nestHit();
-    if (Math.random() < 0.3) {
-      const fx = this.lane.fx;
-      fx.burst(fx.over, this.x + (Math.random() - 0.5) * 60, this.y - 20 - Math.random() * 60, 2, { color: [0x7a5a40, 0x5a4030, 0xa07850], speed: [20, 70], life: [0.2, 0.45], drag: 4, size: 2 });
-    }
-    const r = Math.max(0, this.hp / this.hp0);
-    const st = r > 0.75 ? 0 : r > 0.5 ? 1 : r > 0.25 ? 2 : 3;
-    this.spr.texture = this.sheet.anims.damage[st];
-    if (this.sheet.glow) this.gl.texture = this.sheet.glow.damage[st];
-    this.label.setText(formatCount(Math.max(0, Math.ceil(this.hp))));
-    if (this.hp <= 0) {
-      this.state = 'down';
-      this.lane.nestDown(this);
-    }
-  }
+  get left() { return this.soldiers + this.workers; }
 
   update(dt) {
     if (this.state !== 'alive') return;
-    this.spr.tint = this.hurt > 0 ? 0xffd0c0 : 0xffffff;
-    this.hurt -= dt;
-    this.kick = (this.kick || 0) - dt;
-    const kx = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
-    this.spr.position.x = this.gl.position.x = this.x + kx;
-    this.label.scale.set(this.kick > 0.03 ? 4 : 3);
-    // 群れが近づいたら、シロアリを出して守る
     const lane = this.lane;
-    if (lane.swarm.y - this.y > CONFIG.lane.nestStop + 140) return;
-    this.spawnT -= dt;
-    if (this.spawnT <= 0) {
-      const N = CONFIG.nest;
-      this.spawnT = N.spawnEvery * (0.8 + Math.random() * 0.4);
-      const k = 1 - Math.max(0, this.hp / this.hp0);
-      const stay = this.reachedT !== undefined ? lane.time - this.reachedT : 0;
-      const n = Math.round(N.spawnCount[0] + (N.spawnCount[1] - N.spawnCount[0]) * k + stay * N.escalate);
-      const x = (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * (HALF - 60));
-      lane.addHorde({ x, n, w: 30 + n * 2 }, this.y + 30);
+    // 残りが減るほど巣が崩れていく
+    const k = lane.foes / Math.max(1, lane.foes0);
+    const st = k > 0.6 ? 0 : k > 0.35 ? 1 : k > 0.12 ? 2 : 3;
+    this.spr.texture = this.sheet.anims.damage[st];
+    if (this.sheet.glow) this.gl.texture = this.sheet.glow.damage[st];
+    if (this.reachedT === undefined || lane.state !== 'run' || this.left <= 0) return;
+    // 群れが着いたら、残りのシロアリが波になって出てくる
+    this.waveT -= dt;
+    if (this.waveT > 0) return;
+    const N = CONFIG.nest;
+    this.waveT = N.waveEvery;
+    this.flip = !this.flip;
+    const x = (Math.random() < 0.5 ? -1 : 1) * Math.random() * (HALF - 30);
+    if ((this.flip || !this.workers) && this.soldiers > 0) {
+      const n = Math.min(this.soldiers, N.soldierWave);
+      this.soldiers -= n;
+      for (let i = 0; i < n; i++) lane.addSoldier(x + (i - (n - 1) / 2) * 14, this.y + 20 - i * 6, this.soldierHp, N.rush);
+    } else if (this.workers > 0) {
+      const n = Math.min(this.workers, N.workerWave);
+      this.workers -= n;
+      lane.hordes.push(new Horde(lane, { x, n, w: 10 + n * 2, exact: true, speedMul: N.rush }, this.y + 24));
     }
   }
 
   destroy() {
     this.spr.destroy();
     this.gl.destroy();
-    this.label.destroy();
   }
 }
 
@@ -698,7 +923,7 @@ export class Lane {
   /**
    * @param G      ゲーム全体（view, sprites, swarm, fx, run …）
    * @param stage  course.js の1ステージ
-   * @param hooks  { onClear({stars}), onWipe() }
+   * @param hooks  { onClear({stars, kills, left, honey, flawless}), onWipe() }
    */
   constructor(G, stage, hooks) {
     this.G = G;
@@ -714,28 +939,41 @@ export class Lane {
     G.layers.top.addChild(this.top);
     G.layers.glow.addChild(this.glow);
     this.T = textures();
+    const run = G.run;
     this.events = stage.course.events.map((e) => ({ ...e }));
-    if (G.run.mods.goldEvery && !this.events.some((e) => e.kind === 'gold')) {
-      const gy = Math.round(stage.course.length * 0.55), gx = (Math.random() < 0.5 ? -1 : 1) * 60;
-      this.events.push({ y: gy, kind: 'gold', x: gx }, { y: gy + 100, kind: 'horde', x: gx, n: 18, w: 40 });
+    if (run.mods.goldEvery && !this.events.some((e) => e.kind === 'gold')) {
+      const gy = Math.round(stage.course.length * 0.55), gx = (Math.random() < 0.5 ? -1 : 1) * 40;
+      this.events.push({ y: gy, kind: 'gold', x: gx });
     }
     this.events.sort((a, b) => a.y - b.y);
+    // このステージのシロアリの数（上の「残り」）
+    this.foes = 0;
+    for (const e of this.events) {
+      if (e.kind === 'horde' || e.kind === 'soldiers') this.foes += foeCount(e.n, run);
+      else if (e.kind === 'beetle') this.foes += 1;
+      else if (e.kind === 'nest') this.foes += foeCount(e.soldiers ?? 0, run) + (e.workers ? foeCount(e.workers, run) : 0);
+    }
+    this.foes0 = this.foes;
     this.next = 0;
     this.startY = this.swarm.y;
     this.length = stage.course.length;
     this.hordes = [];
+    this.soldiers = [];
     this.eggs = [];
     this.cocoons = [];
+    this.cages = [];
     this.panels = [];
     this.beetles = [];
     this.dangers = [];
     this.rocks = [];
     this.puddles = [];
     this.bullets = [];
-    this.bulletPool = {};   // 弾の絵を使い回す（作っては捨てるとスマホで引っかかる）。絵の種類ごと
+    this.bulletPool = {};    // 弾の絵を使い回す（作っては捨てるとスマホで引っかかる）。絵の種類ごと
     this.kamikaze = [];
+    this.runners = [];       // 卵から走ってくる仲間
+    this.heroes = [];        // 助けた兵隊アリ
     this.nest = null;
-    this.state = 'run';    // run / done
+    this.state = 'run';      // run / done
     this.time = 0;
     this.fireAcc = 0;
     this.biteT = 0;
@@ -761,12 +999,13 @@ export class Lane {
     const L = CONFIG.lane;
     const sw = this.swarm;
     sw.speed = L.speed;
-    sw.bounds = { min: -HALF + 6, max: HALF - 6 };
+    sw.bounds = { min: -HALF + 5, max: HALF - 5 };
     sw.obstacles = [];
     sw.followMul = 1;
     sw.setShape({ areaPerAnt: L.areaPerAnt, maxHalfWidth: L.maxHalfWidth, maxHalfHeight: L.maxHalfHeight });
-    this.barKey = '';
-    this.updateBar();
+    G.hud.bossBar(null);
+    // 前のステージで助けた兵隊アリも一緒に
+    for (let i = 0; i < (run.heroes || 0); i++) this.makeHero(i);
     // 1-1 の最初の3回だけ、出てきた物のそばに短い説明を出す（遊びながら覚える）
     this.hints = [];
     this.hintsOn = false;
@@ -776,6 +1015,7 @@ export class Lane {
       tips.lane = (tips.lane || 0) + 1;
       save();
     }
+    G.hud.foes(this.foes);
   }
 
   addHint(obj, key, dy) {
@@ -791,14 +1031,14 @@ export class Lane {
     this.hints = this.hints.filter((h) => {
       const o = h.obj;
       h.t += dt;
-      const gone = o.state === 'dead' || o.state === 'gone' || o.state === 'passed' || o.state === 'down' || o.used || o.dead || o.done
-        || o.y > sw.y - sw.ry || h.t > 9;
+      const gone = o.state === 'dead' || o.state === 'gone' || o.state === 'passed' || o.used || o.dead || o.done
+        || (o !== this.nest && o.y > sw.y - sw.ry) || h.t > 8;
       if (gone) { h.el.remove(); return false; }
       const q = this.G.worldToCss(o.x, o.y + h.dy);
       h.half ??= h.el.offsetWidth / 2 + 6;
       h.el.style.left = Math.max(h.half, Math.min(this.G.view.cssW - h.half, q.x)) + 'px';
       h.el.style.top = q.y + 'px';
-      h.el.style.opacity = String(Math.max(0, Math.min(1, (q.y - 90) / 40)));   // 上のバーと重ならないように
+      h.el.style.opacity = String(Math.max(0, Math.min(1, (q.y - 90) / 40)));   // 上の表示と重ならないように
       return true;
     });
   }
@@ -845,6 +1085,99 @@ export class Lane {
     return k;
   }
 
+  /** 卵から1匹ずつ走ってくる仲間（着いたら +1） */
+  addRunner(x, y, delay) {
+    const V = this.S.ants[this.swarm.variant] || this.S.ants.base;
+    const s = new Sprite(V.color[0][0]);
+    s.anchor.set(0.5);
+    s.position.set(Math.round(x), Math.round(y));
+    this.top.addChild(s);
+    this.runners.push({ s, V, x0: x, y0: y, x, y, t: -delay, dur: 0.38 + Math.random() * 0.12 });
+  }
+
+  updateRunners(dt) {
+    if (!this.runners.length) return;
+    const sw = this.swarm;
+    const keep = [];
+    for (const r of this.runners) {
+      r.t += dt;
+      if (r.t < 0) { keep.push(r); continue; }
+      const p = Math.min(1, r.t / r.dur), e = p * (2 - p);
+      const tx = sw.x + (Math.random() - 0.5) * 4, ty = sw.y - sw.ry * 0.3;
+      r.x = r.x0 + (tx - r.x0) * e;
+      r.y = r.y0 + (ty - r.y0) * e - Math.sin(p * Math.PI) * 14;
+      const dir = ((Math.round(Math.atan2(tx - r.x0, -(ty - r.y0)) / (Math.PI / 4)) % 8) + 8) % 8;
+      r.s.texture = r.V.color[dir][Math.floor(r.t * 30) % 8];
+      r.s.position.set(Math.round(r.x), Math.round(r.y));
+      if (p < 1) { keep.push(r); continue; }
+      r.s.destroy();
+      if (this.state === 'run' || this.state === 'done') {
+        const got = this.gain(1, { x: r.x, y: r.y }, 'egg');
+        if (got) this.G.popupNum(r.x + (Math.random() - 0.5) * 10, r.y - 12, '+1', 0xb8ffb0);
+      }
+    }
+    this.runners = keep;
+  }
+
+  /** 助けた兵隊アリが群れの先頭に加わる */
+  addHero(x, y) {
+    const run = this.G.run, H = CONFIG.hero;
+    if ((run.heroes || 0) >= H.max) {
+      this.honey(H.extraHoney, x, y);
+      this.G.popup(x, y - 20, t('hero_more'), 'graze');
+      return;
+    }
+    run.heroes = (run.heroes || 0) + 1;
+    const h = this.makeHero(run.heroes - 1);
+    h.x = x;
+    h.y = y;
+    h.join = 0.45;
+    this.G.popup(x, y - 30, t('hero_join'), 'mutate up');
+    this.G.flash(0xffd040, 0.25);
+  }
+
+  makeHero(i) {
+    const V = this.S.ants[CONFIG.hero.variant];
+    const s = new Sprite(V.color[0][0]);
+    s.anchor.set(0.5);
+    s.scale.set(2);
+    this.top.addChild(s);
+    const gl = new Sprite(V.glow[0][0]);
+    gl.anchor.set(0.5);
+    gl.scale.set(2);
+    gl.tint = 0xffd040;
+    this.glow.addChild(gl);
+    const h = { s, gl, V, slot: i === 0 ? 0 : (i % 2 ? -1 : 1), x: this.swarm.x, y: this.swarm.y - 20, fireT: Math.random() * 0.2, walk: 0, join: 0 };
+    this.heroes.push(h);
+    return h;
+  }
+
+  updateHeroes(dt) {
+    if (!this.heroes.length) return;
+    const sw = this.swarm, H = CONFIG.hero;
+    for (const h of this.heroes) {
+      const tx = sw.x + h.slot * 18, ty = sw.y - sw.ry * 0.25;   // 群れのまんなかで先頭に立つ
+      const k = Math.min(1, dt * (h.join > 0 ? 6 : 10));
+      h.join -= dt;
+      h.x += (tx - h.x) * k;
+      h.y += (ty - h.y) * k;
+      h.walk += dt;
+      const f = Math.floor(h.walk * 14) % 8;
+      h.s.texture = h.V.color[0][f];
+      h.gl.texture = h.V.glow[0][f];
+      h.s.position.set(Math.round(h.x), Math.round(h.y));
+      h.gl.position.copyFrom(h.s.position);
+      h.gl.alpha = 0.5 + 0.3 * Math.sin(this.time * 4);
+      if (this.state !== 'run' || sw.count <= 0) continue;
+      h.fireT -= dt * (this.feverT > 0 ? CONFIG.fever.fireMul : 1);
+      if (h.fireT <= 0) {
+        h.fireT = H.every;
+        this.spawnBullet(h.x, h.y - 16, { kind: 'hero', lv: 3, pierce: H.pierce }, H.damage * this.G.run.mods.dmgMul);
+        this.fx.spark(this.fx.glow, h.x, h.y - 18, { color: 0xffe080, life: 0.06, drag: 0 });
+      }
+    }
+  }
+
   /** 板に触れた */
   applyPanel(p) {
     const run = this.G.run, sw = this.swarm;
@@ -860,11 +1193,11 @@ export class Lane {
     if (p.v > 0) {
       const v = Math.round(p.v * run.mods.addMul);
       const got = this.gain(v, at, p.kind);
-      this.G.popupNum(p.x, p.y - 14, '+' + formatCount(got), GOOD.text);
+      this.G.popupNum(p.x, p.y - 12, '+' + formatCount(got), GOOD.text);
       sfx.gateGood();
     } else if (p.v < 0) {
       const lost = this.loseAnts(Math.max(1, Math.round(-p.v * run.mods.dmgTaken)), { at: { x: sw.x, y: sw.y - sw.ry }, why: 'board' });
-      this.G.popupNum(p.x, p.y - 14, '-' + formatCount(lost), BAD.text);
+      this.G.popupNum(p.x, p.y - 12, '-' + formatCount(lost), BAD.text);
       sfx.gateBad();
       this.G.flash(0xff3a2a, 0.18);
     }
@@ -875,7 +1208,7 @@ export class Lane {
     const run = this.G.run;
     const r = applyMutation(run, mut);
     this.swarm.setVariant(variantName(run), { ...swarmLook(run), sweep: true });
-    if (run.mods.mutateGain > 0) this.gain(Math.round(run.count * run.mods.mutateGain), { x, y });
+    if (run.mods.mutateGain > 0) this.gain(Math.max(1, Math.round(run.count * run.mods.mutateGain)), { x, y });
     sfx.mutate();
     this.G.flash(MUT_COLOR[mut], 0.25);
     const name = t('mut_' + r.kind) + ' ' + t('lv', { n: r.lv });
@@ -901,9 +1234,45 @@ export class Lane {
     return h;
   }
 
+  addSoldier(x, y, hp, speedMul = 1) {
+    const s = new Soldier(this, Math.max(-HALF + 6, Math.min(HALF - 6, x)), y, hp, speedMul);
+    this.soldiers.push(s);
+    return s;
+  }
+
   // ---------------------------------------------------------------------------
-  // シロアリを倒す
+  // 残りのシロアリ・倒したとき
   // ---------------------------------------------------------------------------
+  /** シロアリが倒れた・逃げた：上の「残り」が減る */
+  foeDown(n) {
+    this.foes = Math.max(0, this.foes - n);
+    this.G.hud.foes(this.foes);
+  }
+
+  /** 倒した数・連続撃破・蜜・警報フェロモン・捕食の法則 */
+  countKill(x, y, big = false) {
+    this.kills++;
+    this.G.run.kills = (this.G.run.kills || 0) + 1;
+    this.addFever(big ? CONFIG.fever.perSoldier : CONFIG.fever.perKill);
+    if (this.kills % CONFIG.horde.killsPerHoney === 0) this.honey(1, x, y, 1);
+    sfx.pop();
+    // 続けて倒すと、節目でほめる
+    this.combo = this.time - this.lastKillT < CONFIG.horde.comboGap ? this.combo + 1 : 1;
+    this.lastKillT = this.time;
+    const ci = CONFIG.horde.combo.indexOf(this.combo);
+    if (ci >= 0) this.praiseCombo(ci);
+    // 捕食の法則：倒したシロアリの場所から仲間が増える
+    const pr = this.G.run.mods.predation;
+    if (pr > 0) {
+      this.predAcc += pr;
+      if (this.predAcc >= 1) {
+        const k = Math.floor(this.predAcc);
+        this.predAcc -= k;
+        this.gain(k, { x, y }, 'devour');
+      }
+    }
+  }
+
   buildGrid() {
     for (const b of this.grid) b.length = 0;
     for (const h of this.hordes) {
@@ -911,7 +1280,7 @@ export class Lane {
     }
   }
 
-  /** x0〜x1 の範囲にいるシロアリ */
+  /** x0〜x1 の範囲にいる働きシロアリ */
   unitsIn(x0, x1, fn) {
     const k0 = bucketOf(x0), k1 = bucketOf(x1);
     for (let k = k0; k <= k1; k++) {
@@ -924,44 +1293,20 @@ export class Lane {
     u.dead = true;
     const h = u.horde;
     h.alive--;
-    const fx = this.fx;
     h.lastDeath = this.time;
+    const fx = this.fx;
     if (cause === 'clash') {
       fx.burst(fx.over, u.x, u.y, 3, { color: [0x8a7048, 0x3a111b, 0x9a5222], speed: [20, 60], life: [0.15, 0.35], drag: 6 });
-    } else if (cause === 'trample') {
-      fx.burst(fx.glow, u.x, u.y - 2, 3, { color: [0xff7a3a, 0xffe0b0], speed: [20, 60], life: [0.12, 0.28], drag: 6 });
-      fx.burst(fx.over, u.x, u.y, 4, { color: [0xd8c0a0, 0x8a7048, 0x6a5538], speed: [25, 80], life: [0.2, 0.5], drag: 5 });
-      this.kills++;
-      this.G.run.kills = (this.G.run.kills || 0) + 1;
-      sfx.pop();
     } else if (cause === 'flee') {
       fx.burst(fx.over, u.x, u.y, 3, { color: [0xd8c0a0, 0x8a7048], speed: [20, 60], life: [0.2, 0.4], drag: 5 });
     } else {
       // 弾ける：白い煙の粒と、割れた殻
-      fx.burst(fx.glow, u.x, u.y - 2, u.soldier ? 6 : 3, { color: cause === 'poison' ? [FXC.green, 0xd8ffc8] : [0xfff4e0, 0xffe0b0], speed: [15, 45], life: [0.12, 0.28], drag: 6 });
-      fx.burst(fx.over, u.x, u.y, u.soldier ? 7 : 4, { color: [0xd8c0a0, 0x8a7048, 0x6a5538], speed: [25, 80], life: [0.2, 0.5], drag: 5 });
+      fx.burst(fx.glow, u.x, u.y - 2, 3, { color: cause === 'poison' ? [FXC.green, 0xd8ffc8] : cause === 'trample' ? [0xff7a3a, 0xffe0b0] : [0xfff4e0, 0xffe0b0], speed: [15, 45], life: [0.12, 0.28], drag: 6 });
+      fx.burst(fx.over, u.x, u.y, 4, { color: [0xd8c0a0, 0x8a7048, 0x6a5538], speed: [25, 80], life: [0.2, 0.5], drag: 5 });
       h.shot++;
-      this.kills++;
-      this.G.run.kills = (this.G.run.kills || 0) + 1;
-      this.addFever(u.soldier ? CONFIG.fever.perSoldier : CONFIG.fever.perKill);
-      if (this.kills % CONFIG.horde.killsPerHoney === 0) this.honey(1, u.x, u.y, 1);
-      sfx.pop();
-      // 続けて倒すと、節目でほめる
-      this.combo = this.time - this.lastKillT < CONFIG.horde.comboGap ? this.combo + 1 : 1;
-      this.lastKillT = this.time;
-      const ci = CONFIG.horde.combo.indexOf(this.combo);
-      if (ci >= 0) this.praiseCombo(ci);
-      // 捕食の法則：倒したシロアリの場所から仲間が増える
-      const pr = this.G.run.mods.predation;
-      if (pr > 0) {
-        this.predAcc += pr;
-        if (this.predAcc >= 1) {
-          const k = Math.floor(this.predAcc);
-          this.predAcc -= k;
-          this.gain(k, { x: u.x, y: u.y }, 'devour');
-        }
-      }
+      this.countKill(u.x, u.y, false);
     }
+    this.foeDown(1);
     // 倒れた姿をその場に少し残す（絵は大群ごと片づけるときに消す。1匹ずつ消すと重くなる）
     u.corpse = CONFIG.horde.corpse;
     u.s.tint = 0x5a4836;
@@ -974,7 +1319,7 @@ export class Lane {
       this.G.popup(u.x, u.y - 20, t('wiped', { n: h.shot }), 'graze');
       this.G.slowmo();
       this.G.view.shake(CONFIG.feel.shakeSmall);
-      fx.ring(fx.glow, u.x, u.y, 4, 30, 0.4, 0xffffff, 0.7);
+      fx.ring(fx.glow, u.x, u.y, 4, 26, 0.4, 0xffffff, 0.7);
     }
   }
 
@@ -990,11 +1335,12 @@ export class Lane {
   /** 前に敵がいるか（満タンになっても、敵がいないところでは始めない） */
   enemyAhead() {
     const sw = this.swarm, R = CONFIG.shot.range;
+    for (const s of this.soldiers) if (!s.dead && s.y < sw.y + 10 && sw.y - s.y < R) return true;
     for (const h of this.hordes) {
       if (h.wiped) continue;
       for (const u of h.units) if (!u.dead && u.y < sw.y && sw.y - u.y < R) return true;
     }
-    return !!(this.nest && this.nest.state === 'alive' && sw.y - this.nest.y < R + 40);
+    return false;
   }
 
   startFever() {
@@ -1007,7 +1353,7 @@ export class Lane {
     G.hitstop(0.05);
     sfx.fever();
     for (const a of sw.ants) sw.flashAnt(a, 0xff3a1a);
-    this.fx.ring(this.fx.glow, sw.x, sw.y, 4, 34, 0.5, 0xff5a2a, 1);
+    this.fx.ring(this.fx.glow, sw.x, sw.y, 4, 30, 0.5, 0xff5a2a, 1);
   }
 
   updateFever(dt) {
@@ -1016,7 +1362,7 @@ export class Lane {
       this.feverT -= dt;
       // 群れがちらちらと赤く光る
       if (Math.random() < dt * 30 && sw.ants.length) {
-        for (let i = 0; i < 6; i++) sw.flashAnt(sw.ants[Math.floor(Math.random() * sw.ants.length)], 0xff3a1a);
+        for (let i = 0; i < 4; i++) sw.flashAnt(sw.ants[Math.floor(Math.random() * sw.ants.length)], 0xff3a1a);
       }
       if (Math.random() < dt * 20) this.fx.spark(this.fx.glow, sw.x + (Math.random() - 0.5) * sw.rx * 2, sw.y + (Math.random() - 0.5) * sw.ry, { color: 0xff7a3a, vy: -30, life: 0.4, drag: 1 });
       this.G.hud.fever(Math.max(0, this.feverT / F.time), 'on');
@@ -1029,10 +1375,10 @@ export class Lane {
 
   praiseCombo(i) {
     const sw = this.swarm, G = this.G;
-    G.popup(sw.x, sw.y - sw.ry - 46, t('combo', { n: this.combo }), 'combo');
+    G.popup(sw.x, sw.y - sw.ry - 40, t('combo', { n: this.combo }), 'combo');
     sfx.combo(i);
     if (i >= 2) G.view.shake(CONFIG.feel.shakeSmall);
-    if (i >= 1) this.honey(i, sw.x, sw.y - sw.ry - 30);
+    if (i >= 1) this.honey(i, sw.x, sw.y - sw.ry - 24);
   }
 
   /** 蜜を足す（しずくが右上の数へ飛んでいき、届いたら数が増える） */
@@ -1050,21 +1396,21 @@ export class Lane {
   spawnDrop(x, y, v) {
     let s = this.dropPool.pop();
     if (!s) {
-      s = new Sprite(this.T.disc[2]);
+      s = new Sprite(this.T.disc[1]);
       s.anchor.set(0.5);
       s.tint = 0xffc830;
       this.glow.addChild(s);
     }
     s.alpha = 1;
-    const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 80;
-    this.drops.push({ s, x, y, v, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50, t: 0 });
+    const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 60;
+    this.drops.push({ s, x, y, v, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, t: 0 });
   }
 
   updateDrops(dt) {
     const run = this.G.run;
     if (this.drops.length) {
       const view = this.G.view;
-      const tx = view.camX + view.W / 2 - 24, ty = view.camY - view.H / 2 + 40;   // 右上の蜜の数
+      const tx = view.camX + view.W / 2 - 18, ty = view.camY - view.H / 2 + 30;   // 右上の蜜の数
       const keep = [];
       for (const d of this.drops) {
         d.t += dt;
@@ -1074,14 +1420,14 @@ export class Lane {
           d.vy *= k;
         } else {
           const dx = tx - d.x, dy = ty - d.y, dist = Math.hypot(dx, dy) || 1;
-          if (dist < 12) {
+          if (dist < 10) {
             d.s.alpha = 0;
             this.dropPool.push(d.s);
             this.honeyPending -= d.v;
             sfx.honey();
             continue;
           }
-          const sp = 260 + d.t * 700;
+          const sp = 200 + d.t * 500;
           d.vx += ((dx / dist) * sp - d.vx) * Math.min(1, dt * 8);
           d.vy += ((dy / dist) * sp - d.vy) * Math.min(1, dt * 8);
         }
@@ -1117,7 +1463,7 @@ export class Lane {
     }
   }
 
-  /** 群れとシロアリがぶつかった：1匹ずつ相殺 */
+  /** 群れと働きシロアリがぶつかった：1匹ずつ相殺（大暴れ中は踏みつぶす） */
   contacts() {
     const sw = this.swarm;
     if (sw.count <= 0) return;
@@ -1128,7 +1474,7 @@ export class Lane {
       if (dx * dx + dy * dy < 1) {
         if (this.feverT > 0) { this.killUnit(u, 'trample'); return; }
         this.killUnit(u, 'clash');
-        lost += u.soldier ? 2 : 1;
+        lost += 1;
         cx += u.x;
         cy += u.y;
         n++;
@@ -1145,14 +1491,14 @@ export class Lane {
   }
 
   // ---------------------------------------------------------------------------
-  // 射撃
+  // 射撃（弾1発で数字がちょうど1ずつ減る）
   // ---------------------------------------------------------------------------
   weaponInfo() {
     const run = this.G.run, w = run.weapon, m = run.mods, A = CONFIG.arms;
     let rate = CONFIG.shot.perAnt, dmg = CONFIG.shot.damage, kind = 'acid', pierce = 0;
     if (w?.type === 'fire') {
       kind = 'venom';
-      dmg *= A.fire.dmgMul[w.lv - 1];
+      dmg = A.fire.damage[w.lv - 1];
     }
     if (w?.type === 'bullet') {
       kind = 'sting';
@@ -1180,7 +1526,7 @@ export class Lane {
       this.fireAcc -= 1;
       const a = sw.ants[Math.floor(Math.random() * sw.ants.length)];
       this.spawnBullet(a.x, a.y - 7, W, dmg);
-      if (shots % 2 === 0) this.fx.spark(this.fx.glow, a.x, a.y - 8, { color: W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffe27a, life: 0.05, drag: 0 });
+      this.fx.spark(this.fx.glow, a.x, a.y - 8, { color: W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffe27a, life: 0.05, drag: 0 });
       shots++;
     }
     if (!shots) return;
@@ -1194,7 +1540,15 @@ export class Lane {
     const i = Math.max(0, Math.min(2, W.lv - 1));
     if (W.kind === 'venom') return ['glob', 'glob7', 'glob9'][i];
     if (W.kind === 'sting') return ['lance', 'lance5', 'lance7'][i];
+    if (W.kind === 'hero') return 'lance5';
     return 'streak';
+  }
+
+  bulletTint(kind) {
+    if (kind === 'venom') return FXC.green;
+    if (kind === 'sting') return FXC.purple;
+    if (kind === 'hero') return 0xffd040;
+    return this.feverT > 0 ? CONFIG.fever.tint : 0xffd860;   // 蟻酸のしずく：明るい黄色の筋（大暴れ中は赤く燃える）
   }
 
   spawnBullet(x, y, W, dmg) {
@@ -1203,31 +1557,31 @@ export class Lane {
     let s = pool.pop();
     if (!s) {
       s = new Sprite(T[key]);
-      s.tint = W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffd860;   // 蟻酸のしずく：明るい黄色の筋
       s.anchor.set(0.5, 0);
       this.glow.addChild(s);
     }
     s.alpha = 1;
-    s.tint = this.feverT > 0 && W.kind === 'acid' ? CONFIG.fever.tint : W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffd860;
+    s.tint = this.bulletTint(W.kind);
     s.position.set(Math.round(x), Math.round(y));
-    const range = CONFIG.shot.range * (W.kind === 'sting' ? 1.25 : 1) * this.G.run.mods.rangeMul;
+    const long = W.kind === 'sting' || W.kind === 'hero';
+    const range = CONFIG.shot.range * (long ? 1.2 : 1) * this.G.run.mods.rangeMul;
     // 前にいる的へ、弾が少し曲がって集まる（群れの撃った弾が的に吸い込まれる）
     let vx = 0;
     const tg = this.aimAt(x, y, range);
+    const sp = CONFIG.shot.speed * (long ? 1.2 : 1);
     if (tg) {
-      const S = CONFIG.shot, sp = S.speed * (W.kind === 'sting' ? 1.25 : 1);
+      const S = CONFIG.shot;
       vx = Math.max(-S.aimMax, Math.min(S.aimMax, (tg.x - x) / Math.max(8, y - tg.y))) * sp;
     }
-    this.bullets.push({ s, key, x, y, vx, py: y, y0: y, range, dmg, kind: W.kind, lv: W.lv, pierce: W.pierce, hit: null });
+    this.bullets.push({ s, key, x, y, vx, sp, py: y, y0: y, range, dmg, kind: W.kind, lv: W.lv, pierce: W.pierce, hit: null });
   }
 
   updateBullets(dt) {
     const top = this.camY() - this.G.view.H / 2 - 20;
-    const sp = CONFIG.shot.speed;
     const keep = [];
     for (const b of this.bullets) {
       b.py = b.y;
-      b.y -= sp * (b.kind === 'sting' ? 1.25 : 1) * dt;
+      b.y -= b.sp * dt;
       b.x += b.vx * dt;
       if (this.bulletHits(b) || b.y < top) { this.freeBullet(b); continue; }
       const left = b.range - (b.y0 - b.y);
@@ -1236,7 +1590,7 @@ export class Lane {
         this.freeBullet(b);
         continue;
       }
-      b.s.alpha = Math.min(1, left / 50);
+      b.s.alpha = Math.min(1, left / 40);
       b.s.position.set(Math.round(b.x), Math.round(b.y));
       keep.push(b);
     }
@@ -1249,13 +1603,13 @@ export class Lane {
     let best = null, bd = 1e9;
     const consider = (tx, ty) => {
       const dy = y - ty;
-      if (dy < 8 || dy > range) return;
+      if (dy < 6 || dy > range) return;
       const dx = Math.abs(tx - x);
-      if (dx > 5 + dy * cone) return;
+      if (dx > 4 + dy * cone) return;
       const d = dy + dx * 1.5;
       if (d < bd) { bd = d; best = { x: tx, y: ty }; }
     };
-    const span = 5 + range * cone;
+    const span = 4 + range * cone;
     this.unitsIn(x - span, x + span, (u) => { consider(u.x, u.y); });
     for (const tg of this.aimList) consider(tg.x, tg.y);
     return best;
@@ -1265,11 +1619,12 @@ export class Lane {
   buildAimList() {
     const L = this.aimList;
     L.length = 0;
-    for (const e of this.eggs) if (e.state === 'alive') L.push({ x: e.x, y: e.y - 8 });
-    for (const c of this.cocoons) if (c.state === 'alive') L.push({ x: c.x, y: c.y - 12 });
+    for (const s of this.soldiers) if (!s.dead) L.push({ x: s.x, y: s.y - 6 });
+    for (const e of this.eggs) if (e.state === 'alive') L.push({ x: e.x, y: e.y - 6 });
+    for (const c of this.cocoons) if (c.state === 'alive') L.push({ x: c.x, y: c.y - 10 });
+    for (const c of this.cages) if (c.state === 'alive') L.push({ x: c.x, y: c.y - 14 });
     for (const e of this.beetles) if (!e.dead) L.push({ x: e.x, y: e.y });
     for (const p of this.panels) if (p.kind === 'board' && !p.used && p.v < p.cap) L.push({ x: p.x, y: p.y + p.h / 2 });
-    if (this.nest && this.nest.state === 'alive') L.push({ x: this.nest.x, y: this.nest.y - 50 });
   }
 
   freeBullet(b) {
@@ -1297,16 +1652,32 @@ export class Lane {
       return true;
     });
     if (stop) return true;
+    for (const s of this.soldiers) {
+      if (s.dead || b.hit?.has(s)) continue;
+      if (Math.abs(b.x - s.x) < s.r && b.y < s.y + 3 && b.y > s.y - 16) {
+        s.damage(b.dmg, b.kind);
+        this.impact(b, b.x, b.y);
+        if (b.pierce > 0) { b.pierce--; (b.hit ||= new Set()).add(s); continue; }
+        return true;
+      }
+    }
     for (const c of this.cocoons) {
-      if (c.state === 'alive' && Math.abs(b.x - c.x) < c.r && b.y < c.y + 4 && b.y > c.y - 26) {
+      if (c.state === 'alive' && Math.abs(b.x - c.x) < c.r && b.y < c.y + 4 && b.y > c.y - 22) {
         c.damage(b.dmg);
         this.impact(b, b.x, b.y);
         return true;
       }
     }
     for (const e of this.eggs) {
-      if (e.state === 'alive' && Math.abs(b.x - e.x) < e.r && b.y < e.y + 4 && b.y > e.y - 18) {
+      if (e.state === 'alive' && Math.abs(b.x - e.x) < e.r && b.y < e.y + 4 && b.y > e.y - 16) {
         e.damage(b.dmg);
+        this.impact(b, b.x, b.y);
+        return true;
+      }
+    }
+    for (const c of this.cages) {
+      if (c.state === 'alive' && Math.abs(b.x - c.x) < c.r && b.y < c.y + 4 && b.y > c.y - 34) {
+        c.damage(b.dmg);
         this.impact(b, b.x, b.y);
         return true;
       }
@@ -1336,13 +1707,6 @@ export class Lane {
         return true;
       }
     }
-    const n = this.nest;
-    if (n && n.hitTest(b.x, b.y)) {
-      const mul = b.kind === 'sting' ? CONFIG.arms.bullet.bigMul : 1;
-      n.damage((b.dmg * mul + (b.kind === 'venom' ? CONFIG.arms.fire.dot[b.lv - 1] * 0.25 : 0)) * this.G.run.mods.nestDmg);
-      this.impact(b, b.x, b.y);
-      return true;
-    }
     return false;
   }
 
@@ -1356,7 +1720,7 @@ export class Lane {
   impact(b, x, y) {
     const fx = this.fx;
     if (b.kind === 'venom') fx.burst(fx.glow, x, y, 3, { color: [FXC.green, FXC.greenDeep], speed: [15, 45], life: [0.12, 0.3], drag: 6 });
-    else if (b.kind === 'sting') fx.burst(fx.glow, x, y, 4, { color: [FXC.purple, 0xffffff], speed: [40, 90], life: [0.1, 0.22], drag: 8 });
+    else if (b.kind === 'sting' || b.kind === 'hero') fx.burst(fx.glow, x, y, 4, { color: [b.kind === 'hero' ? 0xffd040 : FXC.purple, 0xffffff], speed: [40, 90], life: [0.1, 0.22], drag: 8 });
     else fx.spark(fx.glow, x, y, { color: 0xfff0c0, life: 0.08, drag: 6 });
   }
 
@@ -1377,7 +1741,7 @@ export class Lane {
     const A = CONFIG.arms.mandible, sw = this.swarm, jm = this.G.run.mods.jawMul;
     const range = A.range[lv - 1] * jm;
     const front = sw.y - sw.ry;
-    const x0 = sw.x - sw.rx - 10, x1 = sw.x + sw.rx + 10;
+    const x0 = sw.x - sw.rx - 8, x1 = sw.x + sw.rx + 8;
     const inRange = (x, y, r = 0) => x > x0 - r && x < x1 + r && y > front - range - r && y < sw.y + 4;
     const cand = [];
     this.unitsIn(x0, x1, (u) => { if (inRange(u.x, u.y)) cand.push(u); });
@@ -1389,10 +1753,11 @@ export class Lane {
       else u.oy -= A.knock[lv - 1];   // 倒しきれない分は、はじき飛ばす
     });
     const D = A.bigDamage[lv - 1] * jm;
+    for (const s of this.soldiers) if (!s.dead && inRange(s.x, s.y, s.r)) { s.damage(D); any = true; }
     for (const e of this.eggs) if (e.state === 'alive' && inRange(e.x, e.y, e.r)) { e.damage(D); any = true; }
     for (const c of this.cocoons) if (c.state === 'alive' && inRange(c.x, c.y, c.r)) { c.damage(D); any = true; }
+    for (const c of this.cages) if (c.state === 'alive' && inRange(c.x, c.y, c.r)) { c.damage(D); any = true; }
     for (const e of this.beetles) if (!e.dead && inRange(e.x, e.y, e.r)) { e.damage(D); e.y -= A.knock[lv - 1] * 0.5; any = true; }
-    if (this.nest && this.nest.state === 'alive' && inRange(this.nest.x, this.nest.y, 40)) { this.nest.damage(D * 2 * this.G.run.mods.nestDmg); any = true; }
     if (any) {
       this.biteT = A.every[lv - 1] / (this.feverT > 0 ? 2 : 1);
       this.fx.snap(sw, lv);
@@ -1400,11 +1765,12 @@ export class Lane {
     } else this.biteT = 0.06;
   }
 
-  /** 自爆アリ：前のアリが敵へ走り、大群の中で爆発する（使うたびに群れが減る） */
+  /** 自爆アリ：前のアリが敵へ走り、群れの中で爆発する（使うたびに群れが減る） */
   launchBombs(dt, lv) {
     this.bombT -= dt;
     if (this.bombT > 0) return;
     const Bm = CONFIG.arms.bomb, sw = this.swarm;
+    if (sw.count < Bm.minCount) { this.bombT = 0.3; return; }
     const target = this.bombTarget(Bm.reach);
     if (!target) { this.bombT = 0.15; return; }
     this.bombT = Bm.every[lv - 1] / (this.feverT > 0 ? 2 : 1);
@@ -1424,7 +1790,7 @@ export class Lane {
     this.loseAnts(n, { pick: (a) => a.y, burst: false, why: 'bomb' });
   }
 
-  /** 爆弾の狙い：大群のいちばん密なところ、なければ卵・ゴミムシ・巣 */
+  /** 爆弾の狙い：大群のいちばん密なところ、兵隊シロアリ、ゴミムシ、卵 */
   bombTarget(reach) {
     const sw = this.swarm;
     let best = null, bestN = 0;
@@ -1449,9 +1815,9 @@ export class Lane {
       return pick;
     }
     const cand = [];
+    for (const s of this.soldiers) if (!s.dead && s.y < sw.y && sw.y - s.y < reach) cand.push(s);
     for (const e of this.beetles) if (!e.dead && e.y < sw.y && sw.y - e.y < reach) cand.push(e);
     for (const e of this.eggs) if (e.state === 'alive' && sw.y - e.y < reach * 0.8) cand.push(e);
-    if (this.nest && this.nest.state === 'alive' && sw.y - this.nest.y < reach + 60) cand.push(this.nest);
     cand.sort((p, q) => Math.hypot(p.x - sw.x, p.y - sw.y) - Math.hypot(q.x - sw.x, q.y - sw.y));
     return cand[0] || null;
   }
@@ -1460,11 +1826,10 @@ export class Lane {
     const keep = [];
     for (const k of this.kamikaze) {
       k.t += dt;
-      const ty = k.target === this.nest ? k.target.y - 30 : k.target.y;
-      const tx = k.target.x;
+      const tx = k.target.x, ty = k.target.y;
       const d = Math.hypot(tx - k.x, ty - k.y);
-      const sp = 170;
-      if (d > 6 && k.t < 2.2) {
+      const sp = 130;
+      if (d > 5 && k.t < 2.2) {
         k.x += (tx - k.x) / d * sp * dt;
         k.y += (ty - k.y) / d * sp * dt;
         k.walk += sp * dt;
@@ -1492,10 +1857,11 @@ export class Lane {
     this.fx.explode(x, y, lv, this.G.view);
     sfx.explode(lv >= 2);
     this.unitsIn(x - R, x + R, (u) => { if (Math.hypot(u.x - x, u.y - y) < R) this.killUnit(u, 'shot'); });
+    for (const s of this.soldiers) if (!s.dead && Math.hypot(s.x - x, s.y - y) < R + s.r) s.damage(D);
     for (const e of this.beetles) if (!e.dead && Math.hypot(e.x - x, e.y - y) < R + e.r) e.damage(D);
     for (const e of this.eggs) if (e.state === 'alive' && Math.hypot(e.x - x, e.y - y) < R + e.r) e.damage(D);
     for (const c of this.cocoons) if (c.state === 'alive' && Math.hypot(c.x - x, c.y - y) < R + c.r) c.damage(D);
-    if (this.nest && this.nest.state === 'alive' && Math.abs(x - this.nest.x) < R + CONFIG.nest.hitW && y < this.nest.y + R) this.nest.damage(D * 2 * this.G.run.mods.nestDmg);
+    for (const c of this.cages) if (c.state === 'alive' && Math.hypot(c.x - x, c.y - y) < R + c.r) c.damage(D);
   }
 
   // ---------------------------------------------------------------------------
@@ -1510,7 +1876,7 @@ export class Lane {
       d.g.clear();
       d.gl.clear();
       const blink = 0.5 + 0.5 * Math.sin(d.t * (10 + p * 20));
-      d.g.circle(d.x, Math.round(d.y), d.r).fill({ color: 0xff2a1a, alpha: 0.18 + 0.2 * p * blink });
+      d.g.circle(d.x, Math.round(d.y), d.r).fill({ color: 0xff2a1a, alpha: 0.2 + 0.22 * p * blink });
       d.gl.circle(d.x, Math.round(d.y), d.r).stroke({ width: 1, color: 0xff3a2a, alpha: 0.6 + 0.4 * blink });
       d.gl.circle(d.x, Math.round(d.y), Math.max(1, d.r * p)).stroke({ width: 1, color: 0xffb08a, alpha: 0.7 });
       if (d.t < d.warn) { keep.push(d); continue; }
@@ -1524,7 +1890,7 @@ export class Lane {
         this.G.flash(0xff5a1a, 0.15);
       }
       const fx = this.fx;
-      fx.burst(fx.glow, d.x, d.y, 22, { color: [FXC.orange, FXC.yellow, 0xffffff], speed: [30, 110], life: [0.2, 0.45], drag: 5, size: 2 });
+      fx.burst(fx.glow, d.x, d.y, 18, { color: [FXC.orange, FXC.yellow, 0xffffff], speed: [30, 100], life: [0.2, 0.45], drag: 5, size: 2 });
       fx.ring(fx.glow, d.x, d.y, 4, Math.min(34, d.r + 4), 0.3, FXC.orange, 1);
       fx.blot(fx.under, d.x, d.y, Math.round(d.r * 0.8), 0x1a0806, 0.5, 1.5);
       d.g.destroy();
@@ -1539,7 +1905,7 @@ export class Lane {
   addRock(ev, y) {
     const sh = this.S.props.rocks;
     const s = new Sprite(sh.anims.variant[ev.variant ?? 0]);
-    s.anchor.set(sh.anchor[0] / sh.cell[0], sh.anchor[1] / sh.cell[1]);
+    anchorOf(s, sh);
     s.position.set(ev.x, Math.round(y));
     s.zIndex = y + 4;
     this.swarm.layer.addChild(s);
@@ -1551,7 +1917,7 @@ export class Lane {
   addPuddle(ev, y) {
     const sh = this.S.props.puddles;
     const s = new Sprite(sh.anims.variant[ev.variant ?? 0]);
-    s.anchor.set(sh.anchor[0] / sh.cell[0], sh.anchor[1] / sh.cell[1]);
+    anchorOf(s, sh);
     s.position.set(ev.x, Math.round(y));
     this.under.addChild(s);
     this.puddles.push({ x: ev.x, y, rx: ev.rx ?? 44, ry: ev.ry ?? 22, s });
@@ -1573,38 +1939,37 @@ export class Lane {
   }
 
   // ---------------------------------------------------------------------------
-  // 巣を落とした
+  // 巣を落とした（残りのシロアリが0になった）
   // ---------------------------------------------------------------------------
-  nestDown(n) {
+  nestDown() {
+    const n = this.nest;
     this.state = 'done';
+    n.state = 'down';
     const G = this.G, fx = this.fx, run = G.run, N = CONFIG.nest;
     const secs = this.time - (n.reachedT ?? this.time);
     const stars = secs <= N.stars[0] ? 3 : secs <= N.stars[1] ? 2 : 1;
     let lost = 0;
     for (const k in this.stats.loss) lost += this.stats.loss[k];
     const flawless = lost === 0;
-    const bonus = CONFIG.honey.nest + this.stage.area + stars * N.honeyPerStar + Math.floor(run.count / 20) * N.honeyPer20 + (flawless ? N.flawless : 0);
-    this.honey(bonus, n.x, n.y - 50, 26);
+    const bonus = CONFIG.honey.nest + this.stage.area + stars * N.honeyPerStar + Math.floor(run.count / 10) * N.honeyPer10 + (flawless ? N.flawless : 0);
+    this.honey(bonus, n.x, n.y - 40, 20);
     // 崩れる：何度も爆ぜて、土ぼこりと蜜が噴き出す
     const y = n.y - 40;
     for (let i = 0; i < 5; i++) {
-      G.later(i * 0.12, () => fx.explode(n.x + (Math.random() - 0.5) * 60, y + (Math.random() - 0.5) * 60, 3, G.view));
+      G.later(i * 0.12, () => fx.explode(n.x + (Math.random() - 0.5) * 50, y + (Math.random() - 0.5) * 50, 3, G.view));
     }
-    fx.burst(fx.glow, n.x, y, 40, { color: [0xffd420, 0xffb000, 0xfff0a0], speed: [40, 160], life: [0.5, 1.1], drag: 2.5, size: 2 });
-    fx.burst(fx.over, n.x, y + 20, 30, { color: [0x5a4030, 0x3a2a20, 0x7a5a40], speed: [30, 120], life: [0.6, 1.2], drag: 3, size: 2 });
+    fx.burst(fx.glow, n.x, y, 40, { color: [0xffd420, 0xffb000, 0xfff0a0], speed: [40, 140], life: [0.5, 1.1], drag: 2.5, size: 2 });
+    fx.burst(fx.over, n.x, y + 20, 30, { color: [0x5a4030, 0x3a2a20, 0x7a5a40], speed: [30, 110], life: [0.6, 1.2], drag: 3, size: 2 });
     G.slowmo();
+    G.hitstop(0.1);
     G.view.shake(CONFIG.feel.shakeBig);
     G.flash(0xffd420, 0.3);
     sfx.explode(true);
     G.later(0.25, () => sfx.clear());
-    n.spr.alpha = 0.5;
-    n.label.visible = false;
-    // 残ったシロアリは逃げ散る（全部倒れる）
-    for (const h of this.hordes) for (const u of h.units) if (!u.dead) this.killUnit(u, 'flee');
+    n.spr.alpha = 0.45;
     for (const d of this.dangers) { d.g.destroy(); d.gl.destroy(); }
     this.dangers = [];
     this.swarm.speed = CONFIG.lane.speed * 0.6;   // 群れが巣へなだれ込む
-    G.hud.bossBar(null);
     const starText = '★'.repeat(stars) + '☆'.repeat(3 - stars);
     G.banner(t('nest_down'), 'good', `${starText}  ${t('left_count', { n: fmt(run.count) })}${flawless ? '  ' + t('flawless') : ''}`);
     this.hooks.onClear?.({ stars, kills: this.kills, left: run.count, honey: this.stageHoney, flawless });
@@ -1618,58 +1983,58 @@ export class Lane {
   }
 
   spawnEvents() {
-    const ahead = this.camY() - this.G.view.H / 2 - 120;
+    const ahead = this.camY() - this.G.view.H / 2 - 100;
     while (this.next < this.events.length && this.startY - this.events[this.next].y > ahead) {
       const ev = this.events[this.next++];
       const y = this.startY - ev.y;
       const L = CONFIG;
       let obj = null, dy = -40;
-      if (ev.kind === 'horde') { obj = this.addHorde(ev, y); dy = 16; }
-      else if (ev.kind === 'egg') { obj = new Egg(this, ev, y); this.eggs.push(obj); dy = -46; }
+      if (ev.kind === 'horde') { obj = this.addHorde(ev, y); dy = 14; }
+      else if (ev.kind === 'soldiers') {
+        const n = foeCount(ev.n, this.G.run);
+        for (let i = 0; i < n; i++) {
+          const s = this.addSoldier(ev.x + (ev.spread ?? 0) * (i - (n - 1) / 2), y - i * L.soldier.gap, ev.hp);
+          if (i === 0) { obj = s; dy = -26; }
+        }
+      }
+      else if (ev.kind === 'egg') { obj = new Egg(this, ev, y); this.eggs.push(obj); dy = -38; }
       else if (ev.kind === 'cocoon') this.cocoons.push(new Cocoon(this, ev, y));
-      else if (ev.kind === 'board') { obj = new Panel(this, 'board', ev.x, y, L.board.width, ev.v); this.panels.push(obj); dy = -26; }
+      else if (ev.kind === 'cage') { obj = new Cage(this, ev, y); this.cages.push(obj); dy = -42; }
+      else if (ev.kind === 'board') { obj = new Panel(this, 'board', ev.x, y, L.board.width, ev.v); this.panels.push(obj); dy = -22; }
       else if (ev.kind === 'gold') this.panels.push(new Panel(this, 'gold', ev.x, y, L.gold.width, 2));
       else if (ev.kind === 'plus') {
         for (let i = 0; i < ev.n; i++) {
           const p = new Panel(this, 'plus', ev.x, y - i * L.plusLane.gap, L.plusLane.width, (ev.v ?? 1) + this.G.run.mods.plusBonus);
           this.panels.push(p);
-          if (i === 0) { obj = p; dy = 22; }
+          if (i === 0) { obj = p; dy = 18; }
         }
       }
-      else if (ev.kind === 'beetle') { obj = new Beetle(this, ev, y); this.beetles.push(obj); dy = -34; }
+      else if (ev.kind === 'beetle') { obj = new Beetle(this, ev, y); this.beetles.push(obj); dy = -32; }
       else if (ev.kind === 'rock') this.addRock(ev, y);
       else if (ev.kind === 'puddle') this.addPuddle(ev, y);
       else if (ev.kind === 'nest') {
         this.nest = obj = new Nest(this, ev, y);
-        dy = -CONFIG.nest.hitH - 40;
+        dy = -150;
         sfx.warn();
       }
       if (obj && ev.hint && this.hintsOn) this.addHint(obj, ev.hint, dy);
     }
   }
 
-  /** 上のバー：巣までの道のり → 巣が見えたら巣の耐久 */
-  updateBar() {
-    const hud = this.G.hud;
-    let key, name, ratio;
-    if (this.state === 'done') return;
-    if (this.nest) {
-      name = t('nest_name');
-      ratio = Math.max(0, this.nest.hp / this.nest.hp0);
-    } else {
-      name = t('to_nest');
-      ratio = Math.min(1, (this.startY - this.swarm.y) / Math.max(1, this.length - CONFIG.lane.nestStop));
-    }
-    key = name + Math.round(ratio * 200);
-    if (key === this.barKey) return;
-    this.barKey = key;
-    hud.bossBar(name, ratio);
-  }
-
   cleanup() {
-    const below = this.camY() + this.G.view.H / 2 + 60;
+    const below = this.camY() + this.G.view.H / 2 + 40;
     this.hordes = this.hordes.filter((h) => {
-      if (h.done || h.y + h.back > below) { h.destroy(); return false; }
+      if (h.done) { h.destroy(); return false; }
+      if (h.y + h.back > below) {
+        if (h.alive > 0) this.foeDown(h.alive);   // 通り過ぎて逃げた
+        h.destroy();
+        return false;
+      }
+      return true;
+    });
+    this.soldiers = this.soldiers.filter((s) => {
+      if (s.dead && s.corpse <= 0) { s.destroy(); return false; }
+      if (!s.dead && !s.engaged && s.y > below) { this.foeDown(1); s.dead = true; s.destroy(); return false; }
       return true;
     });
     this.eggs = this.eggs.filter((e) => {
@@ -1678,11 +2043,23 @@ export class Lane {
       return true;
     });
     this.cocoons = this.cocoons.filter((c) => c.state !== 'gone');
+    this.cages = this.cages.filter((c) => {
+      if (c.state === 'dead' || c.state === 'gone') return false;
+      if (c.y > below) { c.remove(); return false; }
+      return true;
+    });
     this.panels = this.panels.filter((p) => {
       if (p.gone || p.y > below) { p.destroy(); return false; }
       return true;
     });
-    this.beetles = this.beetles.filter((e) => { if (e.dead || e.y > below) { e.destroy(); return false; } return true; });
+    this.beetles = this.beetles.filter((e) => {
+      if (e.dead || e.y > below) {
+        if (!e.counted) { e.counted = true; this.foeDown(1); }
+        e.destroy();
+        return false;
+      }
+      return true;
+    });
     this.rocks = this.rocks.filter((r) => {
       if (r.y > below + 40) {
         r.s.destroy();
@@ -1699,6 +2076,7 @@ export class Lane {
     const sw = this.swarm;
     this.spawnEvents();
     for (const h of this.hordes) h.update(dt);
+    for (const s of this.soldiers) s.update(dt);
     this.buildGrid();
     if (this.state === 'run') {
       this.contacts();
@@ -1706,10 +2084,13 @@ export class Lane {
       this.fire(dt);
       this.weapons(dt);
     }
+    this.updateHeroes(dt);
     this.updateBullets(dt);
     this.updateKamikaze(dt);
+    this.updateRunners(dt);
     for (const e of this.eggs) e.update(dt);
     for (const c of this.cocoons) c.update(dt);
+    for (const c of this.cages) c.update(dt);
     for (const p of this.panels) p.update(dt);
     for (const e of this.beetles) if (!e.dead) e.update(dt);
     this.updateDangers(dt);
@@ -1725,8 +2106,7 @@ export class Lane {
     } else if (this.nest && this.state === 'run' && sw.speed === 0) {
       sw.speed = CONFIG.lane.speed;   // 巣の前でアギトアリになった：顎が届くところまで近づく
     }
-    if (this.state === 'done' && this.nest && sw.y < this.nest.y + 80) sw.speed = 0;
-    this.updateBar();
+    if (this.state === 'done' && this.nest && sw.y < this.nest.y + 60) sw.speed = 0;
     this.burstT -= dt;
     this.updateFever(dt);
     // 大暴れ中は前へ速く進む（巣の前で止まっているときは止まったまま）
@@ -1738,18 +2118,23 @@ export class Lane {
     if (this.killsShown < want) this.killsShown = Math.min(want, this.killsShown + Math.max(1, Math.ceil((want - this.killsShown) * 0.25)));
     this.G.hud.kills(this.killsShown);
     this.cleanup();
+    // 残りのシロアリが0：巣が落ちる
+    if (this.state === 'run' && this.nest && this.nest.reachedT !== undefined && this.foes <= 0 && sw.count > 0) this.nestDown();
   }
 
   destroy() {
     for (const h of this.hordes) h.destroy();
+    for (const s of this.soldiers) s.destroy();
     for (const e of this.eggs) e.remove();
     for (const c of this.cocoons) c.remove();
+    for (const c of this.cages) c.remove();
     for (const p of this.panels) p.destroy();
     for (const e of this.beetles) e.destroy();
     for (const r of this.rocks) r.s.destroy();
     for (const p of this.puddles) p.s.destroy();
     for (const k of this.kamikaze) { k.body.destroy(); k.flash.destroy(); }
     for (const d of this.dangers) { d.g.destroy(); d.gl.destroy(); }
+    for (const r of this.runners) r.s.destroy();
     for (const h of this.hints) h.el.remove();
     this.nest?.destroy();
     this.under.destroy({ children: true });
@@ -1759,5 +2144,6 @@ export class Lane {
     sw.obstacles = [];
     sw.followMul = 1;
     sw.setShape();
+    this.G.hud.foes(null);
   }
 }

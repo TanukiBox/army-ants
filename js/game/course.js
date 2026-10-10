@@ -1,46 +1,49 @@
-// 作り直し（v2）のステージを作る。1-1 は手作り、ほかは「ごほうびと危険を近くに並べた型」を乱数で組み合わせる。
+// ステージを作る（参考動画に寄せた版）。1-1 は手作り、ほかは「ごほうびと敵を近くに並べた型」を乱数で組み合わせる。
 // 同じ種なら同じコースになる（今日のコース）。
-// 距離はスタートからの道のり（ドット）。群れは CONFIG.lane.speed で進む。
-// シロアリの大群はこちらへ歩いてくるので、「群れと出会う場所」より奥に置く（meet）。
+// 距離はスタートからの道のり（ドット）。横の位置は道のまんなかが 0（はしは ±CONFIG.track.width/2）。
+// シロアリはこちらへ歩いてくるので、「群れと出会う場所」より奥に置く（meet）。
+// ステージの最後は巣：群れが着くと、残りのシロアリ（守り）が出てくる。全部倒すとクリア。
 import { CONFIG } from './config.js';
 import { rngFor } from '../core/rng.js';
 
 export const AREAS = ['garden', 'forest', 'hive'];
 const WEAPONS = ['mandible', 'fire', 'bullet', 'bomb'];
-const R1_STAGES = 4;       // R1（遊びの芯の確認）はエリア1のふつうのステージ4つ
-const MEET = 150;          // 大群が現れてから群れと出会うまでに、群れが進むぶんの目安
-// 横の位置と幅は、幅340の道で考えた値を、いまの道の幅に合わせて縮める
-const DESIGN_W = 340;
-const SX = CONFIG.track.width / DESIGN_W;
+const STAGES = 4;          // いまはエリア1のふつうのステージ4つ
+const MEET = 150;          // 敵が現れてから群れと出会うまでに、敵が歩くぶんの目安
 
+const egg = (y, x, hp, n) => ({ y, kind: 'egg', x: Math.round(x), hp: Math.round(hp), n: Math.max(1, Math.round(n * CONFIG.egg.rewardMul)) });
 const horde = (meet, x, n, w) => ({ y: meet + MEET, kind: 'horde', x: Math.round(x), n: Math.max(1, Math.round(n)), w });
-const egg = (y, x, hp, n) => ({ y, kind: 'egg', x: Math.round(x), hp: Math.round(hp), n: Math.round(n) });
+const soldiers = (meet, x, n, hp, spread = 0) => ({ y: meet + MEET, kind: 'soldiers', x: Math.round(x), n: Math.round(n), hp: Math.round(hp * CONFIG.soldier.hpMul), spread });
 
 // ---------------------------------------------------------------------------
-// 1-1（手作り）：5秒以内に卵と小さな大群、10秒以内に変異、真ん中で大きな大群
+// 1-1（手作り）：はじめは1匹でも割れる卵、すぐに兵隊シロアリ、ヒアリの繭、＋の道、捕らわれた兵隊アリ…
 // ---------------------------------------------------------------------------
 function firstCourse() {
   const ev = [
-    { ...egg(260, -70, 10, 8), hint: 'egg' },
-    { ...horde(330, 75, 16, 40), hint: 'horde' },
-    { y: 620, kind: 'cocoon', x: 0, mut: 'fire', hp: 30 },
-    horde(720, 0, 36, 70),
-    { y: 1000, kind: 'plus', x: 115, n: 6, v: 1, hint: 'plus' },
-    egg(1060, -90, 16, 10),
-    horde(880, -95, 8, 30),
-    horde(1250, 85, 10, 34),
-    horde(1450, 0, 120, 200),
-    egg(1720, 100, 20, 12),
-    { y: 1880, kind: 'cocoon', x: -20, mut: 'fire', hp: 40 },
-    horde(1740, -80, 30, 54),
-    horde(1960, 30, 12, 40),
-    { y: 2050, kind: 'board', x: -40, v: -10, hint: 'board' },
-    egg(2080, 115, 14, 8),
-    { y: 2340, kind: 'beetle', x: -60, hp: CONFIG.gas.beetleHp[0], hint: 'beetle' },
-    egg(2400, 90, 18, 10),
-    horde(2520, 40, 50, 90),
+    { ...egg(110, -36, 4, 3), hint: 'egg' },
+    egg(150, 36, 7, 4),
+    { ...soldiers(320, 0, 2, 2), hint: 'soldier' },
+    { y: 400, kind: 'cocoon', x: 38, mut: 'fire', hp: 20 },
+    { y: 470, kind: 'plus', x: -58, n: 10, hint: 'plus' },
+    egg(560, 40, 14, 4),
+    horde(700, 30, 24, 46),
+    { y: 820, kind: 'board', x: -30, v: -8, hint: 'board' },
+    egg(860, 46, 18, 5),
+    { y: 1020, kind: 'cage', x: 48, hp: 90, hint: 'cage' },
+    soldiers(1080, -36, 5, 5),
+    { y: 1240, kind: 'beetle', x: -44, hp: 10, hint: 'beetle' },
+    egg(1300, -44, 16, 4),
+    { y: 1420, kind: 'cocoon', x: 30, mut: 'fire', hp: 30 },
+    horde(1580, 0, 50, 100),
+    { y: 1700, kind: 'plus', x: 58, n: 8 },
+    egg(1730, -44, 24, 6),
+    soldiers(1880, 26, 6, 6),
+    { y: 2000, kind: 'board', x: 38, v: -12 },
+    egg(2020, -48, 18, 5),
+    horde(2200, -26, 30, 56),
+    { y: 2350, kind: 'beetle', x: 40, hp: 12 },
   ];
-  return { events: ev, length: 2850 };
+  return { events: ev, length: 2560, garrison: { soldiers: 10, soldierHp: 6, workers: 20 } };
 }
 
 function pickMut(rng, s) {
@@ -49,87 +52,91 @@ function pickMut(rng, s) {
 }
 
 // ---------------------------------------------------------------------------
-// 型：どれも「ごほうび（卵・繭・＋）」と「危険（大群・予告・看板）」を近くに置き、どちらを撃つかを選ばせる
+// 型：どれも「ごほうび（卵・繭・＋・兵隊アリ）」と「敵」を近くに置き、どちらを撃つかを選ばせる
 // ---------------------------------------------------------------------------
 const PATTERNS = {
   cocoon(y, d, rng, side, s) {
-    const x = Math.round((rng() - 0.5) * 120);
-    return { len: 340, ev: [
-      { y: y + 40, kind: 'cocoon', x, mut: pickMut(rng, s), hp: 32 + 8 * d },
-      horde(y + 130, x * 0.6, 16 * (1 + 0.3 * d), 70),
+    const x = Math.round((rng() - 0.5) * 80);
+    return { len: 230, ev: [
+      { y: y + 40, kind: 'cocoon', x, mut: pickMut(rng, s), hp: 22 + 8 * d },
+      soldiers(y + 100, x * 0.5, 2 + d, 4 + d, 12),
     ] };
   },
   cocoon2(y, d, rng, side, s) {
     const m1 = pickMut(rng, s);
     let m2 = pickMut(rng, s);
     if (m2 === m1) m2 = m1 === 'armor' ? 'fire' : 'armor';
-    return { len: 360, ev: [
-      { y: y + 40, kind: 'cocoon', x: -85, mut: m1, hp: 32 + 8 * d },
-      { y: y + 40, kind: 'cocoon', x: 85, mut: m2, hp: 32 + 8 * d },
-      horde(y + 140, -85, 10 * (1 + 0.3 * d), 50),
-      horde(y + 140, 85, 10 * (1 + 0.3 * d), 50),
+    return { len: 250, ev: [
+      { y: y + 40, kind: 'cocoon', x: -46, mut: m1, hp: 22 + 8 * d },
+      { y: y + 40, kind: 'cocoon', x: 46, mut: m2, hp: 22 + 8 * d },
+      horde(y + 110, -46, 6 + 2 * d, 28),
+      horde(y + 110, 46, 6 + 2 * d, 28),
     ] };
   },
   eggHorde(y, d, rng, side) {
-    return { len: 300, ev: [
-      egg(y + 40, side * 80, 14 + 5 * d, 9 + 2 * d),
-      horde(y + 60, -side * 75, 18 * (1 + 0.3 * d), 80),
+    return { len: 220, ev: [
+      egg(y + 40, side * 44, 12 + 5 * d, 3 + d),
+      horde(y + 60, -side * 40, 16 + 5 * d, 40),
     ] };
   },
   eggGuard(y, d, rng, side) {
-    return { len: 300, ev: [
-      egg(y + 70, side * 40, 16 + 5 * d, 11 + 2 * d),
-      horde(y + 30, side * 40, 14 * (1 + 0.3 * d), 54),
+    return { len: 220, ev: [
+      egg(y + 70, side * 30, 16 + 5 * d, 4 + d),
+      soldiers(y + 30, side * 30, 3 + d, 4 + d, 14),
     ] };
   },
   plusVsEgg(y, d, rng, side) {
-    const n = 5 + d;
-    return { len: 320, ev: [
-      { y: y + 20, kind: 'plus', x: side * 115, n, v: 1 },
-      egg(y + 80, -side * 80, 16 + 5 * d, 10 + 2 * d),
-      horde(y + 110, -side * 60, 10 * (1 + 0.3 * d), 50),
+    return { len: 260, ev: [
+      { y: y + 20, kind: 'plus', x: side * 58, n: 6 + d },
+      egg(y + 70, -side * 44, 14 + 5 * d, 4 + d),
+      soldiers(y + 110, -side * 30, 3, 4 + d),
+    ] };
+  },
+  column(y, d, rng) {
+    // 兵隊シロアリの行列（参考動画の、盾を持った兵士の列）
+    return { len: 240, ev: [
+      soldiers(y + 60, Math.round((rng() - 0.5) * 80), 6 + 2 * d, 4 + d),
     ] };
   },
   wave(y, d) {
-    const n = 8 * (1 + 0.3 * d);
-    return { len: 320, ev: [
-      horde(y + 40, -110, n, 40),
-      horde(y + 110, 0, n, 40),
-      horde(y + 180, 110, n, 40),
+    const n = 6 + 2 * d;
+    return { len: 230, ev: [
+      horde(y + 30, -55, n, 28),
+      horde(y + 80, 0, n, 28),
+      horde(y + 130, 55, n, 28),
     ] };
   },
   bigHorde(y, d, rng, side) {
-    return { len: 420, ev: [
-      horde(y + 140, 0, 100 * (1 + 0.3 * d), 200),
-      egg(y + 300, side * 90, 18 + 5 * d, 12 + 2 * d),
+    return { len: 300, ev: [
+      horde(y + 100, 0, 44 + 14 * d, 110),
+      egg(y + 230, side * 46, 20 + 5 * d, 5 + d),
     ] };
   },
   board(y, d, rng) {
-    const v = -(8 + 4 * d);
-    return { len: 280, ev: [
-      { y: y + 60, kind: 'board', x: Math.round((rng() - 0.5) * 100), v },
-      egg(y + 100, -112, 10 + 3 * d, 6),
-      egg(y + 100, 112, 10 + 3 * d, 6),
+    return { len: 200, ev: [
+      { y: y + 50, kind: 'board', x: Math.round((rng() - 0.5) * 60), v: -(6 + 3 * d) },
+      egg(y + 80, -62, 8 + 2 * d, 2),
+      egg(y + 80, 62, 8 + 2 * d, 2),
     ] };
   },
   rocks(y, d, rng, side) {
-    return { len: 300, ev: [
-      { y: y + 60, kind: 'rock', x: side * 60, r: CONFIG.rock.radii[1], variant: Math.floor(rng() * 3) },
-      { y: y + 160, kind: 'rock', x: -side * 100, r: CONFIG.rock.radii[2], variant: Math.floor(rng() * 3) },
-      horde(y + 130, -side * 20, 14 * (1 + 0.3 * d), 60),
-      egg(y + 220, side * 110, 14 + 4 * d, 8 + d),
+    return { len: 220, ev: [
+      { y: y + 50, kind: 'rock', x: side * 40, r: CONFIG.rock.radii[2], variant: Math.floor(rng() * 3) },
+      { y: y + 130, kind: 'rock', x: -side * 60, r: CONFIG.rock.radii[2], variant: Math.floor(rng() * 3) },
+      horde(y + 100, -side * 10, 10 + 3 * d, 40),
+      egg(y + 170, side * 62, 12 + 4 * d, 3 + d),
     ] };
   },
   beetle(y, d, rng, side) {
-    return { len: 320, ev: [
-      { y: y + 80, kind: 'beetle', x: side * 60, hp: CONFIG.gas.beetleHp[Math.min(3, d)] },
-      egg(y + 60, -side * 85, 14 + 4 * d, 9 + 2 * d),
+    return { len: 240, ev: [
+      { y: y + 70, kind: 'beetle', x: side * 40, hp: 10 + 3 * d },
+      egg(y + 50, -side * 46, 14 + 4 * d, 3 + d),
     ] };
   },
-  gold(y, d, rng, side) {
-    return { len: 300, ev: [
-      horde(y + 40, side * 90, 20 * (1 + 0.3 * d), 60),
-      { y: y + 90, kind: 'gold', x: side * 90 },
+  cage(y, d, rng, side) {
+    return { len: 250, ev: [
+      { y: y + 60, kind: 'cage', x: side * 46, hp: 80 + 25 * d },
+      soldiers(y + 70, -side * 20, 3 + d, 4 + d, 12),
     ] };
   },
 };
@@ -138,51 +145,49 @@ function genCourse(s, seed) {
   const rng = rngFor(seed + ':lane:' + s);
   const d = s;   // 難しさ（1-2 = 1 … 1-4 = 3）
   const pick = (...names) => names[Math.floor(rng() * names.length)];
-  // 並び：はじめに卵と小さな大群 → 繭 → 増やす型 → 大きな大群（山場）→ 危険 → 終盤
   const list = [
     'opening',
     rng() < 0.35 ? 'cocoon2' : 'cocoon',
     pick('eggHorde', 'eggGuard'),
     'plusVsEgg',
+    'column',
     pick('wave', 'eggHorde'),
-    ...(rng() < 0.3 + 0.1 * d ? ['gold'] : []),
+    ...(rng() < 0.5 ? ['cage'] : []),
     'bigHorde',
     ...(rng() < 0.65 ? ['cocoon'] : []),
     pick('board', 'rocks'),
     'beetle',
-    pick('eggGuard', 'wave'),
+    pick('eggGuard', 'column'),
     ...(d >= 2 ? ['bigHorde'] : []),
   ];
   const ev = [];
-  let y = 240;
+  let y = 110;
   for (const name of list) {
     const side = rng() < 0.5 ? -1 : 1;
     if (name === 'opening') {
-      // はじめは群れが小さいので、卵を先に、大群は小さく（始まってすぐ全滅しないように）
-      ev.push(egg(y + 20, side * 70, 10 + 2 * d, 8 + d));
-      ev.push(horde(y + 140, -side * 70, 8 + 2 * d, 40));
-      y += 300;
+      // はじめは群れが小さいので、割りやすい卵を先に、敵は少なく
+      ev.push(egg(y, side * 36, 4 + d, 3));
+      ev.push(egg(y + 40, -side * 36, 8 + 2 * d, 4));
+      ev.push(soldiers(y + 210, 0, 2, 2));
+      y += 260;
       continue;
     }
     const p = PATTERNS[name](y, d, rng, side, s);
     ev.push(...p.ev);
-    // 型と型の間にも、小さな大群（撃つものが途切れないように）
-    if (rng() < 0.6) ev.push(horde(y + p.len * 0.55, (rng() - 0.5) * 230, 6 + 2 * d, 30));
+    // 型と型の間にも、小さな群れ（撃つものが途切れないように）
+    if (rng() < 0.5) ev.push(horde(y + p.len * 0.55, (rng() - 0.5) * 120, 4 + 2 * d, 22));
     y += p.len;
   }
-  return { events: ev, length: y + 120 };
+  return { events: ev, length: y + 150, garrison: { soldiers: 10 + 3 * d, soldierHp: 6 + d, workers: 20 + 6 * d } };
 }
 
-/** ラン全体のステージ（R1：エリア1のふつうのステージ4つ） */
+/** ラン全体のステージ（いまはエリア1のふつうのステージ4つ） */
 export function buildLaneRun(seed) {
   const stages = [];
-  for (let s = 0; s < R1_STAGES; s++) {
+  for (let s = 0; s < STAGES; s++) {
     const course = s === 0 ? firstCourse() : genCourse(s, seed);
-    for (const ev of course.events) {
-      if (ev.x !== undefined) ev.x = Math.round(ev.x * SX);
-      if (ev.w !== undefined) ev.w = Math.round(ev.w * SX);
-    }
-    course.events.push({ y: course.length, kind: 'nest', hp: CONFIG.nest.hp[s], hint: s === 0 ? 'nest' : undefined });
+    const g = course.garrison;
+    course.events.push({ y: course.length, kind: 'nest', soldiers: g.soldiers, soldierHp: Math.round(g.soldierHp * CONFIG.soldier.hpMul), workers: g.workers, hint: s === 0 ? 'nest' : undefined });
     stages.push({ index: s, area: 0, areaName: AREAS[0], local: s, boss: false, course });
   }
   return stages;

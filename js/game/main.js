@@ -89,7 +89,7 @@ async function boot() {
   G.app = app;
   const sprites = await loadSprites('assets/sprites/', (p) => { $('load-bar').style.width = Math.round(p * 100) + '%'; });
   G.sprites = sprites;
-  const view = new PixelView(app, { targetW: CONFIG.view.targetW, targetH: CONFIG.view.targetH });
+  const view = new PixelView(app, { targetW: CONFIG.view.targetW, targetH: CONFIG.view.targetH, fit: CONFIG.view.fit });
   G.view = view;
 
   // 重ねる順番（下から）：地面 → 地面の上の物 → 群れ・敵（奥から順） → 粒 → 一番上（ゲート・数字）
