@@ -69,6 +69,7 @@ G.popupNum = (x, y, text, tint) => {
   G.nums.push({ n, t: 0.9, y });
 };
 G.slowmo = () => { G.slowT = CONFIG.gate.slowmoTime; };
+G.hitstop = (sec = CONFIG.feel.hitstop) => { G.stopT = Math.max(G.stopT || 0, sec); };
 // ゲームの中の時間で待つ（一時停止中は進まない）
 G.timers = [];
 G.later = (sec, fn) => { G.timers.push({ t: sec, fn }); };
@@ -88,7 +89,7 @@ async function boot() {
   G.app = app;
   const sprites = await loadSprites('assets/sprites/', (p) => { $('load-bar').style.width = Math.round(p * 100) + '%'; });
   G.sprites = sprites;
-  const view = new PixelView(app);
+  const view = new PixelView(app, { targetW: CONFIG.view.targetW, targetH: CONFIG.view.targetH });
   G.view = view;
 
   // 重ねる順番（下から）：地面 → 地面の上の物 → 群れ・敵（奥から順） → 粒 → 一番上（ゲート・数字）
@@ -147,10 +148,11 @@ function frame(realDt) {
   if (G.paused) { view.render(0); return; }
   let dt = realDt;
   if (G.slowT > 0) { G.slowT -= realDt; dt *= CONFIG.gate.slowmoScale; }
+  if (G.stopT > 0) { G.stopT -= realDt; dt = 0; }   // ヒットストップ：一瞬止めて手応えを出す
   const sw = G.swarm;
   G.input.update(dt);
   if (G.phase === 'title') {
-    sw.targetX = Math.sin(sw.time * 0.5) * 70;
+    sw.targetX = Math.sin(sw.time * 0.5) * HALF * 0.45;
   }
   sw.update(dt);
   G.field?.update(dt);
@@ -204,9 +206,11 @@ function clearPlay() {
   G.field = null;
   G.fx.clear();
   G.hud.bossBar(null);
+  G.hud.kills(null);
   for (const p of G.nums) p.n.destroy();
   G.nums = [];
   G.slowT = 0;
+  G.stopT = 0;
 }
 
 function toTitle() {

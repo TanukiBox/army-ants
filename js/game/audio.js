@@ -135,4 +135,12 @@ export const sfx = {
     [0, -3, -7, -12].forEach((s, i) => tone(330 * 2 ** (s / 12), 0.4, { type: 'sawtooth', vol: 0.08, delay: i * 0.22 }));
   },
   ui() { if (ok('ui', 0.04)) tone(1200, 0.04, { type: 'triangle', vol: 0.05 }); },
+  /** シロアリが弾けた（高さを少しずつ変える） */
+  pop() { if (ok('pop', 0.035)) noise(0.05, { vol: 0.08, freq: 1300 + Math.random() * 1800, type: 'bandpass', q: 4 }); },
+  /** 卵が割れて仲間が生まれた */
+  hatch() {
+    if (!ok('hatch', 0.1)) return;
+    [0, 5, 9, 12, 17].forEach((s, i) => tone(587 * 2 ** (s / 12), 0.1, { type: 'triangle', vol: 0.09, delay: i * 0.035 }));
+    noise(0.12, { vol: 0.12, freq: 3500, type: 'highpass' });
+  },
 };

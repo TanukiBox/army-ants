@@ -31,6 +31,12 @@
   #hud { position: absolute; left: 0; right: 0; top: 0; padding: max(8px, env(safe-area-inset-top)) 10px 0;
     pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
   #hud-row { display: flex; align-items: flex-start; gap: 8px; }
+  #hud-kills { margin-left: auto; text-align: right; line-height: 1; padding-top: 2px; }
+  #hud-kills span { display: block; font-size: 22px; font-weight: 900; color: #fff2d0; text-shadow: 0 0 8px #ff8a24, 0 1px 2px #000; }
+  #hud-kills small { display: block; margin-top: 2px; font-size: 10px; font-weight: 700; color: var(--dim); }
+  #hud-kills.bump span { animation: killBump 0.12s ease-out; }
+  @keyframes killBump { from { transform: scale(1.25); } to { transform: scale(1); } }
+  #hud-kills + #btn-pause { margin-left: 8px; }
   #hud-stage { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; color: var(--text); }
   #hud-slots { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 11px; color: var(--dim); }
   #hud-slots i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; box-shadow: 0 0 6px currentColor; vertical-align: 1px; }
@@ -182,6 +188,7 @@
         <div id="hud-stage"></div>
         <div id="hud-slots"><div id="hud-weapon"></div><div id="hud-armor"></div></div>
       </div>
+      <div id="hud-kills" class="hidden"><span id="hud-kills-n">0</span><small id="hud-kills-l"></small></div>
       <button id="btn-pause" aria-label="pause">❚❚</button>
     </div>
   </div>

@@ -19,6 +19,25 @@ export class Hud {
     this.bannerEl = $('banner');
     this.popLayer = $('pops');
     this.flashEl = $('flash');
+    this.killsEl = $('hud-kills');
+    this.killsN = $('hud-kills-n');
+    this.killsShown = -1;
+  }
+
+  /** 撃破数（数字は回るように増える） */
+  kills(n) {
+    if (n === null) { this.killsEl.classList.add('hidden'); this.killsShown = -1; return; }
+    if (this.killsShown < 0) {
+      this.killsEl.classList.remove('hidden');
+      $('hud-kills-l').textContent = t('kills_label');
+      this.killsShown = 0;
+    }
+    if (n === this.killsShown) return;
+    this.killsShown = n;
+    this.killsN.textContent = fmt(n);
+    this.killsEl.classList.remove('bump');
+    void this.killsEl.offsetWidth;
+    this.killsEl.classList.add('bump');
   }
 
   show(on) { this.root.classList.toggle('hidden', !on); }

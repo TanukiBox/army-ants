@@ -63,7 +63,7 @@ export function textures() {
     return head && y > 0 ? 0.8 : (y < 8 ? 0.35 * (1 - y / 8) : 0);
   });
   // 蟻酸のしずく（上が先頭の短い筋）
-  TEX.streak = pixTex(2, 6, (x, y) => (y < 2 ? 1 : 1 - (y - 1) / 6));
+  TEX.streak = pixTex(2, 9, (x, y) => (y < 3 ? 1 : 1 - (y - 2) / 8));
   // 毒弾（緑の玉）
   TEX.glob = pixTex(5, 5, (x, y) => {
     const d = Math.hypot(x - 2, y - 2);

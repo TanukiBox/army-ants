@@ -66,6 +66,7 @@ class Horde {
     }
     this.back = Math.min(...this.units.map((u) => u.oy));
     this.alive = n;
+    this.lastDeath = -99;
     this.shot = 0;         // 撃って倒した数（ぶつかって相殺した数は数えない）
     this.walk = Math.random() * 10;
     this.update(0);
@@ -76,7 +77,14 @@ class Horde {
     this.y += H.speed * dt;
     this.walk += (H.speed + this.lane.swarm.speed) * dt;
     for (const u of this.units) {
-      if (u.dead) continue;
+      if (u.dead) {
+        // 倒れたシロアリは、その場に少し残って消える
+        if (u.corpse > 0) {
+          u.corpse -= dt;
+          u.s.alpha = Math.max(0, Math.min(0.85, u.corpse / 0.5));
+        }
+        continue;
+      }
       u.x = Math.max(-HALF + 4, Math.min(HALF - 4, this.x + u.ox + Math.sin(this.walk * 0.05 + u.ph) * H.wobble));
       u.y = this.y + u.oy;
       u.s.position.set(Math.round(u.x), Math.round(u.y));
@@ -92,7 +100,11 @@ class Horde {
     }
   }
 
-  get done() { return this.alive <= 0; }
+  /** 全部倒れて、倒れた姿も消えた */
+  get done() { return this.alive <= 0 && this.lane.time - this.lastDeath > CONFIG.horde.corpse; }
+
+  /** 全部倒れた（倒れた姿はまだ残っているかも） */
+  get wiped() { return this.alive <= 0; }
 
   destroy() {
     for (const u of this.units) { u.s.destroy(); u.lit.destroy(); }
@@ -136,6 +148,7 @@ class Egg {
     this.icon.anchor.set(0.5);
     lane.top.addChild(this.icon);
     this.hurt = 0;
+    this.kick = 0;
     this.t = Math.random() * 6;
     this.draw();
   }
@@ -167,7 +180,12 @@ class Egg {
     if (this.state !== 'alive') return;
     this.hp -= d;
     this.hurt = 0.05;
+    this.kick = 0.08;
     sfx.cocoonHit();
+    if (Math.random() < 0.5) {
+      const fx = this.lane.fx;
+      fx.burst(fx.over, this.x + (Math.random() - 0.5) * 16, this.y - 8, 2, { color: [0xfffaf0, 0xe6d8b4], speed: [20, 60], life: [0.15, 0.3], drag: 5 });
+    }
     if (this.hp <= 0) this.hatch();
     else this.draw();
   }
@@ -175,11 +193,14 @@ class Egg {
   hatch() {
     this.state = 'gone';
     const lane = this.lane, fx = lane.fx;
-    fx.burst(fx.over, this.x, this.y - 4, 18, { color: [0xe6d8b4, 0xfffaf0, 0xb8a888], speed: [30, 100], life: [0.3, 0.6], drag: 5, size: 2 });
-    fx.ring(fx.glow, this.x, this.y - 4, 3, 22, 0.3, 0xb8ffb0, 0.8);
+    fx.burst(fx.over, this.x, this.y - 4, 26, { color: [0xe6d8b4, 0xfffaf0, 0xb8a888], speed: [40, 130], life: [0.3, 0.7], drag: 4, size: 2 });
+    fx.burst(fx.glow, this.x, this.y - 6, 14, { color: [0xb8ffb0, 0xffffff], speed: [30, 90], life: [0.2, 0.45], drag: 5, size: 2 });
+    fx.ring(fx.glow, this.x, this.y - 4, 3, 26, 0.35, 0xb8ffb0, 0.9);
+    fx.ring(fx.glow, this.x, this.y - 4, 2, 14, 0.2, 0xffffff, 0.9);
     const got = lane.gain(this.reward, { x: this.x, y: this.y - 4 }, 'egg');
-    lane.G.popup(this.x, this.y - 34, t('hatch', { n: got }), 'graze');
-    sfx.gateGood();
+    lane.G.popupNum(this.x, this.y - 22, '+' + got, 0xb8ffb0);
+    lane.G.view.shake(CONFIG.feel.shakeSmall);
+    sfx.hatch();
     this.remove();
   }
 
@@ -193,6 +214,10 @@ class Egg {
     if (this.state !== 'alive') return;
     this.t += dt;
     if (this.hurt > 0) { this.hurt -= dt; if (this.hurt <= 0) this.draw(); }
+    // 当たるとゆれる・数字がはねる
+    this.kick -= dt;
+    this.g.position.x = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    this.hpLabel.scale.set(this.kick > 0.04 ? 3 : 2);
     const gl = this.gl;
     gl.clear();
     gl.ellipse(this.x, Math.round(this.y) - 6, 22, 13).fill({ color: 0xfff0b0, alpha: 0.12 + 0.06 * Math.sin(this.t * 3) });
@@ -280,7 +305,12 @@ class Cocoon {
   damage(d) {
     if (this.state !== 'alive') return;
     this.hp -= d * this.f.G.run.mods.cocoonDmg;
+    this.kick = 0.08;
     sfx.cocoonHit();
+    if (Math.random() < 0.4) {
+      const fx = this.f.fx;
+      fx.burst(fx.glow, this.x + (Math.random() - 0.5) * 14, this.y - 12, 2, { color: [MUT_COLOR[this.mut], 0xffffff], speed: [20, 60], life: [0.12, 0.25], drag: 5 });
+    }
     if (this.hp <= 0) this.break();
     else {
       const r = this.hp / this.hp0;
@@ -298,6 +328,9 @@ class Cocoon {
     fx.burst(fx.glow, this.x, this.y - 6, 24, { color: [col, 0xffffff, col], speed: [30, 110], life: [0.3, 0.7], drag: 4, size: 2 });
     fx.burst(fx.over, this.x, this.y - 4, 12, { color: [0x52525e, 0x383842, 0x70707e], speed: [20, 70], life: [0.4, 0.8], drag: 4, size: 2 });
     fx.ring(fx.glow, this.x, this.y - 6, 3, 26, 0.35, col, 1);
+    fx.ring(fx.glow, this.x, this.y - 6, 2, 34, 0.5, 0xffffff, 0.8);
+    this.f.G.hitstop();
+    this.f.G.view.shake(2.5);
     sfx.cocoonBreak();
     addHoney(this.f.G.run, CONFIG.honey.cocoon);
     this.f.mutate(this.mut, this.x, this.y);
@@ -317,6 +350,10 @@ class Cocoon {
     this.t += dt;
     this.light.alpha = 0.55 + 0.45 * Math.sin(this.t * 4) ** 2;
     this.iconGlow.alpha = this.light.alpha;
+    this.kick = (this.kick || 0) - dt;
+    const kx = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    this.spr.position.x = this.light.position.x = this.x + kx;
+    this.label.scale.set(this.kick > 0.04 ? 2 : 1);
     // 中のアリがふわふわ浮く
     const bob = Math.round(Math.sin(this.t * 2.4) * 2);
     this.icon.position.y = Math.round(this.y) + CONFIG.cocoon.iconY + bob;
@@ -588,7 +625,12 @@ class Nest {
     if (this.state !== 'alive') return;
     this.hp -= d;
     this.hurt = 0.05;
+    this.kick = 0.06;
     sfx.nestHit();
+    if (Math.random() < 0.3) {
+      const fx = this.lane.fx;
+      fx.burst(fx.over, this.x + (Math.random() - 0.5) * 60, this.y - 20 - Math.random() * 60, 2, { color: [0x7a5a40, 0x5a4030, 0xa07850], speed: [20, 70], life: [0.2, 0.45], drag: 4, size: 2 });
+    }
     const r = Math.max(0, this.hp / this.hp0);
     const st = r > 0.75 ? 0 : r > 0.5 ? 1 : r > 0.25 ? 2 : 3;
     this.spr.texture = this.sheet.anims.damage[st];
@@ -604,6 +646,10 @@ class Nest {
     if (this.state !== 'alive') return;
     this.spr.tint = this.hurt > 0 ? 0xffd0c0 : 0xffffff;
     this.hurt -= dt;
+    this.kick = (this.kick || 0) - dt;
+    const kx = this.kick > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+    this.spr.position.x = this.gl.position.x = this.x + kx;
+    this.label.scale.set(this.kick > 0.03 ? 4 : 3);
     // 群れが近づいたら、シロアリを出して守る
     const lane = this.lane;
     if (lane.swarm.y - this.y > CONFIG.lane.nestStop + 140) return;
@@ -614,7 +660,7 @@ class Nest {
       const k = 1 - Math.max(0, this.hp / this.hp0);
       const stay = this.reachedT !== undefined ? lane.time - this.reachedT : 0;
       const n = Math.round(N.spawnCount[0] + (N.spawnCount[1] - N.spawnCount[0]) * k + stay * N.escalate);
-      const x = (Math.random() < 0.5 ? -1 : 1) * (20 + Math.random() * 70);
+      const x = (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * (HALF - 60));
       lane.addHorde({ x, n, w: 30 + n * 2 }, this.y + 30);
     }
   }
@@ -675,6 +721,7 @@ export class Lane {
     this.kills = 0;
     this.stats = { gain: {}, loss: {} };   // 何でどれだけ増えた・減ったか（調整用）
     this.grid = Array.from({ length: NB }, () => []);
+    this.aimList = [];
     this.screenY = CONFIG.lane.swarmScreenY;
     const L = CONFIG.lane;
     const sw = this.swarm;
@@ -840,21 +887,25 @@ export class Lane {
     const h = u.horde;
     h.alive--;
     const fx = this.fx;
+    h.lastDeath = this.time;
     if (cause === 'clash') {
       fx.burst(fx.over, u.x, u.y, 3, { color: [0x8a7048, 0x3a111b, 0x9a5222], speed: [20, 60], life: [0.15, 0.35], drag: 6 });
     } else if (cause === 'flee') {
       fx.burst(fx.over, u.x, u.y, 3, { color: [0xd8c0a0, 0x8a7048], speed: [20, 60], life: [0.2, 0.4], drag: 5 });
     } else {
-      // 殻が割れて飛ぶ
-      fx.burst(fx.over, u.x, u.y, u.soldier ? 7 : 4, { color: [0xd8c0a0, 0x8a7048, 0x6a5538], speed: [25, 75], life: [0.2, 0.45], drag: 5 });
-      if (cause === 'poison') fx.burst(fx.glow, u.x, u.y, 3, { color: [FXC.green, FXC.greenDeep], speed: [10, 30], life: [0.2, 0.4], drag: 4 });
+      // 弾ける：白い煙の粒と、割れた殻
+      fx.burst(fx.glow, u.x, u.y - 2, u.soldier ? 6 : 3, { color: cause === 'poison' ? [FXC.green, 0xd8ffc8] : [0xfff4e0, 0xffe0b0], speed: [15, 45], life: [0.12, 0.28], drag: 6 });
+      fx.burst(fx.over, u.x, u.y, u.soldier ? 7 : 4, { color: [0xd8c0a0, 0x8a7048, 0x6a5538], speed: [25, 80], life: [0.2, 0.5], drag: 5 });
       h.shot++;
       this.kills++;
+      this.G.run.kills = (this.G.run.kills || 0) + 1;
       if (this.kills % CONFIG.horde.killsPerHoney === 0) addHoney(this.G.run, 1);
-      sfx.hit();
+      sfx.pop();
     }
-    // 絵は大群ごと片づけるときに消す（1匹ずつ消すと重くなる）。それまでは透明に
-    u.s.alpha = 0;
+    // 倒れた姿をその場に少し残す（絵は大群ごと片づけるときに消す。1匹ずつ消すと重くなる）
+    u.corpse = CONFIG.horde.corpse;
+    u.s.tint = 0x5a4836;
+    u.s.alpha = 0.85;
     u.lit.alpha = 0;
     // ヒアリの毒：倒れたシロアリから、となりへ広がる
     if (u.poisoned && cause !== 'flee') this.spreadPoison(u);
@@ -862,6 +913,7 @@ export class Lane {
     if (h.alive <= 0 && (cause === 'shot' || cause === 'poison') && h.n0 >= CONFIG.horde.bigWipe && h.shot >= h.n0 * 0.6) {
       this.G.popup(u.x, u.y - 20, t('wiped', { n: h.shot }), 'graze');
       this.G.slowmo();
+      this.G.view.shake(CONFIG.feel.shakeSmall);
       fx.ring(fx.glow, u.x, u.y, 4, 30, 0.4, 0xffffff, 0.7);
     }
   }
@@ -944,6 +996,7 @@ export class Lane {
       this.fireAcc -= 1;
       const a = sw.ants[Math.floor(Math.random() * sw.ants.length)];
       this.spawnBullet(a.x, a.y - 7, W, dmg);
+      if (shots % 2 === 0) this.fx.spark(this.fx.glow, a.x, a.y - 8, { color: W.kind === 'venom' ? FXC.green : W.kind === 'sting' ? FXC.purple : 0xffe27a, life: 0.05, drag: 0 });
       shots++;
     }
     if (!shots) return;
@@ -958,14 +1011,21 @@ export class Lane {
     if (!s) {
       if (W.kind === 'venom') { s = new Sprite(T.glob); s.tint = FXC.green; }
       else if (W.kind === 'sting') { s = new Sprite(T.lance); s.tint = FXC.purple; }
-      else { s = new Sprite(T.streak); s.tint = FXC.acid; }
+      else { s = new Sprite(T.streak); s.tint = 0xffd860; }   // 蟻酸のしずく：明るい黄色の筋
       s.anchor.set(0.5, 0);
       this.glow.addChild(s);
     }
     s.alpha = 1;
     s.position.set(Math.round(x), Math.round(y));
     const range = CONFIG.shot.range * (W.kind === 'sting' ? 1.25 : 1);
-    this.bullets.push({ s, x, y, py: y, y0: y, range, dmg, kind: W.kind, lv: W.lv, pierce: W.pierce, hit: null });
+    // 前にいる的へ、弾が少し曲がって集まる（群れの撃った弾が的に吸い込まれる）
+    let vx = 0;
+    const tg = this.aimAt(x, y, range);
+    if (tg) {
+      const S = CONFIG.shot, sp = S.speed * (W.kind === 'sting' ? 1.25 : 1);
+      vx = Math.max(-S.aimMax, Math.min(S.aimMax, (tg.x - x) / Math.max(8, y - tg.y))) * sp;
+    }
+    this.bullets.push({ s, x, y, vx, py: y, y0: y, range, dmg, kind: W.kind, lv: W.lv, pierce: W.pierce, hit: null });
   }
 
   updateBullets(dt) {
@@ -975,6 +1035,7 @@ export class Lane {
     for (const b of this.bullets) {
       b.py = b.y;
       b.y -= sp * (b.kind === 'sting' ? 1.25 : 1) * dt;
+      b.x += b.vx * dt;
       if (this.bulletHits(b) || b.y < top) { this.freeBullet(b); continue; }
       const left = b.range - (b.y0 - b.y);
       if (left <= 0) {   // 届く距離の終わり：しずくが散る
@@ -987,6 +1048,35 @@ export class Lane {
       keep.push(b);
     }
     this.bullets = keep;
+  }
+
+  /** 弾の狙い：前の円すいの中で、いちばん近い的 */
+  aimAt(x, y, range) {
+    const cone = CONFIG.shot.aimCone;
+    let best = null, bd = 1e9;
+    const consider = (tx, ty) => {
+      const dy = y - ty;
+      if (dy < 8 || dy > range) return;
+      const dx = Math.abs(tx - x);
+      if (dx > 5 + dy * cone) return;
+      const d = dy + dx * 1.5;
+      if (d < bd) { bd = d; best = { x: tx, y: ty }; }
+    };
+    const span = 5 + range * cone;
+    this.unitsIn(x - span, x + span, (u) => { consider(u.x, u.y); });
+    for (const tg of this.aimList) consider(tg.x, tg.y);
+    return best;
+  }
+
+  /** 大きな的の狙う点（毎フレーム作り直す） */
+  buildAimList() {
+    const L = this.aimList;
+    L.length = 0;
+    for (const e of this.eggs) if (e.state === 'alive') L.push({ x: e.x, y: e.y - 8 });
+    for (const c of this.cocoons) if (c.state === 'alive') L.push({ x: c.x, y: c.y - 12 });
+    for (const e of this.beetles) if (!e.dead) L.push({ x: e.x, y: e.y });
+    for (const p of this.panels) if (p.kind === 'board' && !p.used && p.v < p.cap) L.push({ x: p.x, y: p.y + p.h / 2 });
+    if (this.nest && this.nest.state === 'alive') L.push({ x: this.nest.x, y: this.nest.y - 50 });
   }
 
   freeBullet(b) {
@@ -1146,7 +1236,7 @@ export class Lane {
     const sw = this.swarm;
     let best = null, bestN = 0;
     for (const h of this.hordes) {
-      if (h.done) continue;
+      if (h.wiped) continue;
       let sx = 0, sy = 0, n = 0;
       for (const u of h.units) {
         if (u.dead || u.y > sw.y - sw.ry || sw.y - u.y > reach) continue;
@@ -1415,6 +1505,7 @@ export class Lane {
     this.buildGrid();
     if (this.state === 'run') {
       this.contacts();
+      this.buildAimList();
       this.fire(dt);
       this.weapons(dt);
     }
@@ -1439,6 +1530,11 @@ export class Lane {
     }
     if (this.state === 'done' && this.nest && sw.y < this.nest.y + 80) sw.speed = 0;
     this.updateBar();
+    // 撃破数は少しずつ追いかけて数え上げる
+    const want = this.G.run.kills || 0;
+    this.killsShown = this.killsShown ?? want;
+    if (this.killsShown < want) this.killsShown = Math.min(want, this.killsShown + Math.max(1, Math.ceil((want - this.killsShown) * 0.25)));
+    this.G.hud.kills(this.killsShown);
     this.cleanup();
   }
 

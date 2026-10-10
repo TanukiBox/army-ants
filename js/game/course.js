@@ -8,7 +8,10 @@ import { rngFor } from '../core/rng.js';
 export const AREAS = ['garden', 'forest', 'hive'];
 const WEAPONS = ['mandible', 'fire', 'bullet', 'bomb'];
 const R1_STAGES = 4;       // R1（遊びの芯の確認）はエリア1のふつうのステージ4つ
-const MEET = 200;          // 大群が現れてから群れと出会うまでに、群れが進むぶんの目安
+const MEET = 150;          // 大群が現れてから群れと出会うまでに、群れが進むぶんの目安
+// 横の位置と幅は、幅340の道で考えた値を、いまの道の幅に合わせて縮める
+const DESIGN_W = 340;
+const SX = CONFIG.track.width / DESIGN_W;
 
 const horde = (meet, x, n, w) => ({ y: meet + MEET, kind: 'horde', x: Math.round(x), n: Math.max(1, Math.round(n)), w });
 const egg = (y, x, hp, n) => ({ y, kind: 'egg', x: Math.round(x), hp: Math.round(hp), n: Math.round(n) });
@@ -24,9 +27,12 @@ function firstCourse() {
     horde(720, 0, 36, 70),
     { y: 1000, kind: 'plus', x: 115, n: 6, v: 1, hint: 'plus' },
     egg(1060, -90, 16, 10),
+    horde(880, -95, 8, 30),
+    horde(1250, 85, 10, 34),
     horde(1450, 0, 120, 200),
     egg(1720, 100, 20, 12),
     horde(1740, -80, 30, 54),
+    horde(1960, 30, 12, 40),
     { y: 2050, kind: 'board', x: -40, v: -10, hint: 'board' },
     egg(2080, 115, 14, 8),
     { y: 2340, kind: 'beetle', x: -60, hp: CONFIG.gas.beetleHp[0], hint: 'beetle' },
@@ -93,7 +99,7 @@ const PATTERNS = {
   },
   bigHorde(y, d, rng, side) {
     return { len: 420, ev: [
-      horde(y + 140, 0, 120 * (1 + 0.35 * d), 200),
+      horde(y + 140, 0, 100 * (1 + 0.3 * d), 200),
       egg(y + 300, side * 90, 18 + 5 * d, 12 + 2 * d),
     ] };
   },
@@ -158,6 +164,8 @@ function genCourse(s, seed) {
     }
     const p = PATTERNS[name](y, d, rng, side, s);
     ev.push(...p.ev);
+    // 型と型の間にも、小さな大群（撃つものが途切れないように）
+    if (rng() < 0.6) ev.push(horde(y + p.len * 0.55, (rng() - 0.5) * 230, 6 + 2 * d, 30));
     y += p.len;
   }
   return { events: ev, length: y + 120 };
@@ -168,6 +176,10 @@ export function buildLaneRun(seed) {
   const stages = [];
   for (let s = 0; s < R1_STAGES; s++) {
     const course = s === 0 ? firstCourse() : genCourse(s, seed);
+    for (const ev of course.events) {
+      if (ev.x !== undefined) ev.x = Math.round(ev.x * SX);
+      if (ev.w !== undefined) ev.w = Math.round(ev.w * SX);
+    }
     course.events.push({ y: course.length, kind: 'nest', hp: CONFIG.nest.hp[s], hint: s === 0 ? 'nest' : undefined });
     stages.push({ index: s, area: 0, areaName: AREAS[0], local: s, boss: false, course });
   }
